@@ -1,12 +1,18 @@
-from key import key, admin_ids
+import os
+import requests
+from aiogram import F
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command, CommandStart, ChatMemberUpdatedFilter, KICKED
 from aiogram.types import Message, ContentType, ChatMemberUpdated, PhotoSize
-from aiogram import F
-from filters import IsAdmin
-import requests
+from dotenv import load_dotenv
 
-bot = Bot(key)
+from filters import IsAdmin
+from aicom import ask_ai
+
+load_dotenv()
+
+
+bot = Bot(os.getenv('KEY'))
 dp = Dispatcher()
 
 
@@ -23,7 +29,7 @@ async def answer_help(message: Message):
     await message.answer(
         "/fox - пришлёт лисичку\n/dog - пришлёт собачку\n/cat - пришлёт котика"
     )
-    if message.from_user.id in admin_ids:
+    if message.from_user.id in eval(os.environ.get('ADMIN_IDS')):
         await message.answer("Для администратора:\n/all")
 
 
@@ -67,10 +73,7 @@ async def send_dog(message: Message):
 
 @dp.message(F.content_type == ContentType.TEXT)
 async def send_text(message: Message):
-    await message.answer(
-        f'{message.from_user.first_name}, ваше сообщение "{message.text}"'
-        f" было отправлено {message.date.date()} в {message.date.time()}."
-    )
+    await message.answer(ask_ai(message.text))
 
 
 @dp.message(
