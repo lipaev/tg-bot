@@ -1,31 +1,22 @@
 import os
-from operator import itemgetter
-from typing import List, Optional
+from typing import List, AsyncIterator
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
 from aiogram.types import Message
 
 import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold, GenerateContentResponse, IncompleteIterationError
-from google.api_core.exceptions import InternalServerError
-
-from langchain.memory import ConversationBufferMemory
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_core.runnables import Runnable
 from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_core.documents import Document
-from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, SystemMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
-from pydantic import BaseModel, Field
-from langchain_core.runnables import (
-    RunnableLambda,
-    ConfigurableFieldSpec,
-    RunnablePassthrough,
-)
+from langchain_core.messages import BaseMessage, BaseMessageChunk
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from utils import ChatOpenAI
 
 load_dotenv('../.env')
+api_key = os.getenv('COURSE_API_KEY')
+genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 
 
 class InMemoryHistory(BaseChatMessageHistory, BaseModel):
@@ -46,89 +37,52 @@ def get_by_session_id(session_id: str) -> BaseChatMessageHistory:
     return store[session_id]
 
 store = {}
-api_key = os.getenv('COURSE_API_KEY')
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
 prompt = ChatPromptTemplate.from_messages([
-    ("system", "Твоё имя - TipTop. Ты высокоинтеллектуальный бот, который может общаться с людьми и делиться картинками животных."),
-    # ("system", "You're an assistant who's good at {ability}"),
+    ("system", "Тебя зовут - TipTop. Ты остроумный и умный бот. На сообщение пользователя тебе следует отвечать на '{lang}' языке"),
     MessagesPlaceholder(variable_name="history"),
     ("human", "{question}")])
 
-course_llm = ChatOpenAI(temperature=1, course_api_key=api_key)
+chain_course_history = RunnableWithMessageHistory(
+        prompt | ChatOpenAI(temperature=1, course_api_key=api_key),
+        get_by_session_id, # Uses the get_by_session_id function defined in the example above.
+        input_messages_key="question",
+        history_messages_key="history")
 
-chain = prompt | course_llm
-chain_with_history = RunnableWithMessageHistory(
-    chain,
-    # Uses the get_by_session_id function defined in the example
-    # above.
-    get_by_session_id,
-    input_messages_key="question",
-    history_messages_key="history")
+chain_flash_history = RunnableWithMessageHistory(
+        prompt | ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.1, max_output_tokens=4000),
+        get_by_session_id, # Uses the get_by_session_id function defined in the example above.
+        input_messages_key="question",
+        history_messages_key="history")
 
-def chat_with_history(message: Message) -> str:
-    """
-    Creates a chat with a history for each user.
+chain_pro_history = RunnableWithMessageHistory(
+        prompt | ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0.1, max_output_tokens=4000),
+        get_by_session_id, # Uses the get_by_session_id function defined in the example above.
+        input_messages_key="question",
+        history_messages_key="history")
 
-    Args:
-        message : aiogram object Message
+chains = {'mini': chain_course_history, 'flash': chain_flash_history, 'pro': chain_pro_history}
 
-    Returns:
-        str : answer from some model
-    """
-    return chain_with_history.invoke(  # noqa: T201
-    {"question": f"{message.text}"},
-    config={"configurable": {"session_id": f"{message.from_user.id}"}}
-).content
+async def history_chat(message: Message, chain: str = 'flash') -> BaseMessage:
+    """Asyncсhronous chat with history"""
 
-def question_answer(question: str) -> str:
-    """
-    Just question-answer chat with preliminary instructions."""
+    if store.get(message.from_user.id, False) and len(store[(message.from_user.id)].messages) > 44:
+        del store[(message.from_user.id)].messages[:2]
+        print(len(store[(message.from_user.id)].messages))
 
-    template = """Ты - TipTop, являешься телеграм ботом, который может общаться с людьми и отправлять им картинки с помощью команд указанных в /help.
-    Тебе пользователь отправил такое сообщение: "{question}". Ответь на это сообщение без приветствия, если он сам не поприветствовал тебя."""
+    return await chains[chain].ainvoke(  # noqa: T201
+    {"lang": message.from_user.language_code, "question": f"{message.text}"},
+    config={"configurable": {"session_id": message.from_user.id}}
+)
 
-    prompt = PromptTemplate(template=template, input_variables=["question"])
+async def history_chat_stream(message: Message, chain: str = 'flash') -> AsyncIterator[BaseMessageChunk]:
+    """Asynchronous chat with history and streaming"""
 
-    openai_llm = ChatOpenAI(temperature=0.0, course_api_key=api_key)
+    if store.get(message.from_user.id, False) and len(store[(message.from_user.id)].messages) > 44:
+        del store[(message.from_user.id)].messages[:2]
+        print(len(store[(message.from_user.id)].messages))
 
-    llm_chain = prompt | openai_llm
-
-    return llm_chain.invoke(question).content
-
-model = genai.GenerativeModel(
-  model_name="gemini-1.5-flash",
-  generation_config={
-        "temperature": 1,
-        "top_p": 0.95,
-        "top_k": 64,
-        "max_output_tokens": 7072,
-        "response_mime_type": "text/plain"
-},
-  safety_settings = {    # See https://ai.google.dev/gemini-api/docs/safety-settings
-        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE
-})
-
-chat_session = model.start_chat()
-
-def ask_gemini(message: Message, stream: bool = False) -> GenerateContentResponse:
-    """
-    Sends an incoming message to Gemini.
-
-    Args:
-        message: _description_
-        stream: _description_. Defaults to False.
-
-    Returns:
-        GenerateContentResponse object.
-    """
-    try:
-        return chat_session.send_message(message.text, stream=stream)
-    except InternalServerError:
-        print(InternalServerError)
-        return chat_session.send_message(message.text, stream=stream)
-    except IncompleteIterationError:
-        print(IncompleteIterationError, 'Пожалуйста, попробуйте ещё раз.')
+    return chains[chain].stream(
+    {"lang": message.from_user.language_code, "question": f"{message.text}"},
+    config={"configurable": {"session_id": message.from_user.id}}
+)

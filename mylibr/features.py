@@ -58,7 +58,7 @@ def convert_gemini_to_markdown_v1(text: str) -> str:
     #text = re.sub(r'```(\w+\W*)\n(.*?)```', r'', text, flags=re.DOTALL)
     #text = re.sub(r'```\n(.*?)\n```', r"<pre>\1</pre>", text, flags=re.DOTALL)
     #text = re.sub(r'(?<!`)`([^`].*?[^`])`(?!`)', r'<code>\1</code>', text, flags=re.DOTALL)
-
+    #                  ^|[^`]
     return text
 
 def convert_gemini_to_markdown_v2(text: str) -> str:
