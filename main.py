@@ -1,5 +1,6 @@
 import os
 import requests
+import asyncio
 
 from aiogram import F
 from aiogram import Bot, Dispatcher
@@ -13,7 +14,7 @@ import pandas as pd
 
 from filters import IsAdmin
 from mylibr.aicom import history_chat as hc, history_chat_stream as hcs, chains, store
-from mylibr.features import convert_gemini_to_markdown_v1, convert_gemini_to_markdown_v2 as cgtmv2
+from mylibr.features import convert_gemini_to_markdown_v1 as cgtmv1, convert_gemini_to_markdown_v2 as cgtmv2, show_typing
 
 load_dotenv()
 
@@ -77,71 +78,66 @@ async def send_dog(message: Message):
 
 async def answer_info(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
-    await message.answer(f"Ваша модель: {models[df.loc[message.from_user.id, 'model']]}\nСтриминг: {'✅' if df.stream[message.from_user.id] else '❎'}")
+    await message.answer(f"Ваша модель: {models[df.loc[message.from_user.id, 'model']]}\nСтриминг сообщений ИИ: {'✅' if df.stream[message.from_user.id] else '❎'}")
 
 async def change_model(message: Message):
     if message.from_user.id in admins_ids:
         df.loc[message.from_user.id, 'model'] = message.text[1:]
+        df.to_csv('users.csv')
         await message.answer(f"Модель обновлена на {models[df.loc[message.from_user.id, 'model']]}.")
     else:
-        await message.answer("Доступно только администраторам.")
+        await message.answer("Пока доступно только администраторам.")
 
 async def send_gemini_text(message: Message):
-    async def send_stream_text(message: Message, temp_text: str='', stream: bool = False): #df.stream[message.from_user.id]
+    async def send_stream_text(message: Message, stream: bool = df.stream[message.from_user.id]):
         if not stream:
             coroutine = await hc(message, df.loc[message.from_user.id].model)
-            #print(text.content + '\n' + '*' * 160)
             text = cgtmv2(coroutine.content)
-            print(text, f'\nTOTAL_TOKENS = {coroutine.usage_metadata['total_tokens']}', len(text))
-            try:
-                await message.answer(text=text, parse_mode='MarkdownV2')
-            except TelegramBadRequest as TGB:
-                bad_request = f'{TGB}.\nПопробуйте ещё раз.'
-                if 'message is too long' in str(TGB):
-                    try:
-                        await message.answer(text[:text[:len(text) // 2].rfind('\n\n')], parse_mode='MarkdownV2')
-                        await sleep(1)
-                        await message.answer(text[text[:len(text) // 2].rfind('\n\n'):], parse_mode='MarkdownV2')
-                    except TelegramBadRequest:
-                        await message.answer(bad_request)
-                elif "parse entities" in str(TGB):
-                    try:
-                        await message.answer(text[:len(text) // 2])
-                        await sleep(1)
-                        await message.answer(text[len(text) // 2:])
-                    except TelegramBadRequest:
-                        await message.answer(bad_request)
+            print('*' * 160 + '\n', text, f'\nTOTAL_TOKENS = {coroutine.usage_metadata['total_tokens']}', len(text))
+            while True:
+                if len(text) <= 4096:
+                    await message.answer(text, parse_mode='MarkdownV2')
+                    break
                 else:
-                    await message.answer(bad_request)
+                    cut = text[0:4096].rfind('\n\n')
+                    temporary, text = text[:cut], text[cut:]
+                    await message.answer(temporary, parse_mode='MarkdownV2')
+            stop_event.set()
         else:
+            temp_text = ''
+            total_tokens = 0
+            total_len = 0
             for chunk in await hcs(message, df.loc[message.from_user.id].model):
-                total_tokens = 0
                 if temp_text:
                     temp_text += chunk.content
+                    total_len += len(chunk.content)
                     total_tokens += chunk.usage_metadata['total_tokens']
-                    temp_text = convert_gemini_to_markdown_v1(temp_text)
-                    #print(chunk.content, end='')
-                    try:
-                        await message_1.edit_text(temp_text, parse_mode='Markdown')
-                    except TelegramBadRequest:
-                        await message_1.edit_text(temp_text)
+                    temp_text = cgtmv1(temp_text)
+                    if len(temp_text) <= 4096:
+                        try:
+                            await message_1.edit_text(temp_text, parse_mode='Markdown')
+                        except TelegramBadRequest:
+                            if "message is not modified" in str(TelegramBadRequest):
+                                pass
+                    else:
+                        cut = temp_text[0:4096].rfind('\n\n')
+                        temporary, temp_text = temp_text[:cut], temp_text[cut:]
+                        try:
+                            await message_1.edit_text(temporary, parse_mode="Markdown")
+                        except TelegramBadRequest:
+                            if "message is not modified" in str(TelegramBadRequest):
+                                pass
+                        message_1 = await bot.send_message(message.chat.id, temp_text, parse_mode='Markdown')
                 else:
                     temp_text += chunk.content
+                    total_len += len(chunk.content)
                     total_tokens += chunk.usage_metadata['total_tokens']
-                    temp_text = convert_gemini_to_markdown_v1(temp_text)
-                    print(chunk.content, end='')
-                    try:
-                        message_1 = await bot.send_message(message.chat.id, temp_text, parse_mode="Markdown")
-                    except TelegramBadRequest:
-                        message_1 = await bot.send_message(message.chat.id, temp_text)
-            print('*' * 160 + '\n', temp_text, f'\nTOTAL_TOKENS = {total_tokens}', len(temp_text))
-    #await show_typing(bot, message.chat.id)
-    await bot.send_chat_action(message.chat.id, "typing")
-    try:
-        await send_stream_text(message)
-    except IncompleteIterationError:
-        print(IncompleteIterationError.mro())
-        await send_stream_text(message)
+                    temp_text = cgtmv1(temp_text)
+                    message_1 = await bot.send_message(message.chat.id, temp_text, parse_mode="Markdown")
+                    stop_event.set()
+            print('*' * 160 + '\n', temp_text, f'\nTOTAL_TOKENS = {total_tokens}', total_len)
+    stop_event = asyncio.Event()
+    await asyncio.gather(show_typing(bot, message.chat.id, stop_event, duration=60), send_stream_text(message))
 
 async def send_photo(message: Message, mphoto: PhotoSize):
     await bot.send_chat_action(message.chat.id, "upload_photo")

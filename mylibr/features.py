@@ -49,7 +49,7 @@ def convert_gemini_to_markdown_v1(text: str) -> str:
     text = re.sub(r'__(.*?)__', r'_\1_', text)
     text = re.sub(r'^\* ', ' • ', text, flags=re.MULTILINE)
     text = re.sub(r'^## (.*?)\n', r'*\1*\n', text, flags=re.MULTILINE)
-    text = re.sub(r'^### (.*?)\n', r'*_\1_*\n', text, flags=re.MULTILINE)
+    text = re.sub(r'^### (.*?)\n', r'*▪️\1*\n', text, flags=re.MULTILINE)
 
     #text = re.sub(r'```', r'\'\'\'', text)
     #text = re.sub(r'`', r'\`', text)
@@ -87,7 +87,7 @@ def convert_gemini_to_markdown_v2(text: str) -> str:
 
     return escape_markdown(text)
 
-async def show_typing(bot: Bot, chat_id: int, action: str = 'typing', duration: int = 15) -> None:
+async def show_typing(bot: Bot, chat_id: int, event: asyncio.Event, action: str = 'typing', duration: int = 15) -> None:
     """
     Periodically sends a chat action to simulate typing a message.
 
@@ -96,6 +96,7 @@ async def show_typing(bot: Bot, chat_id: int, action: str = 'typing', duration: 
     :param duration: The duration in seconds during which the action will be sent.
     """
     end_time = asyncio.get_event_loop().time() + duration
-    while asyncio.get_event_loop().time() < end_time:
+    while not event.is_set() and asyncio.get_event_loop().time() < end_time:
         await bot.send_chat_action(chat_id, action=action)
-        await asyncio.sleep(4)
+        await asyncio.sleep(3)
+        print(f'Прошло {asyncio.get_event_loop().time() - (end_time - duration)} секунд')
