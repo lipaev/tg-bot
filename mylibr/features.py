@@ -100,3 +100,45 @@ async def show_typing(bot: Bot, chat_id: int, event: asyncio.Event, action: str 
         await bot.send_chat_action(chat_id, action=action)
         await asyncio.sleep(3)
         print(f'Прошло {asyncio.get_event_loop().time() - (end_time - duration)} секунд')
+
+def decode_language_code(code: str) -> str:
+    languages = {
+        "ru": "Русский",
+        "en": "Английский",
+        "es": "Испанский",
+        "fr": "Французский",
+        "de": "Немецкий",
+        "it": "Итальянский",
+        "pt": "Португальский",
+        "zh": "Китайский",
+        "ja": "Японский",
+        "ko": "Корейский",
+        "ar": "Арабский",
+        "uk": "Украинский",
+        "pl": "Польский",
+        "be": "Белорусский",
+        "nl": "Нидерландский",
+        "sv": "Шведский",
+        "cs": "Чешский",
+        "ro": "Румынский",
+        "tr": "Турецкий",
+        "he": "Иврит",
+        "id": "Индонезийский",
+        "vi": "Вьетнамский",
+        "th": "Тайский",
+        "hi": "Хинди",
+        "bn": "Бенгальский",
+        "ms": "Малайский",
+        "my": "Бирманский",
+        "tl": "Тагальский",
+        "fa": "Прадоставский",
+        "gu": "Гуджарати",
+        "ta": "Тамильский",
+        "ur": "Урду",
+        "kn": "Каннада",
+        "or": "Ория",
+        "eo": "Эсперанто",
+        "si": "Сингальский"
+    }
+
+    return languages.get(code, code)
