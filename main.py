@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart, ChatMemberUpdatedFilter, KICKED
 from aiogram.types import Message, ContentType, ChatMemberUpdated, PhotoSize, BotCommand, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
+from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
 
 from mylibr.filters import WritingOnFile
 from mylibr.aicom import history_chat as hc, history_chat_stream as hcs, store, InMemoryHistory
@@ -29,15 +30,17 @@ logging.basicConfig(level=logging.DEBUG,
 
 async def answer_start(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
+    await message.delete()
     df.loc[message.from_user.id] = [message.from_user.first_name, 0, False, 'flash', message.from_user.language_code]
     df.to_csv('users.csv')
     logging.info(f"{message.from_user.id}, {message.from_user.first_name}, {message.from_user.language_code}")
     await message.answer(
-        "Приветствую!\nЯ - бот с искусственным интеллектом.\nУмею общаться и делиться картинками.\nДля дополнительной информации отправьте - /help!"
+        "*Приветствую!*\nЯ - бот с искусственным интеллектом.\nУмею общаться и делиться картинками.\nДля дополнительной информации отправь - /help!", parse_mode='Markdown'
     )
 
 async def answer_help(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
+    await message.delete()
     stream = df.stream[message.from_user.id]
     await message.answer(
         f"""Ваша модель: {models[df.loc[message.from_user.id, 'model']]}
@@ -57,6 +60,7 @@ async def answer_help(message: Message):
 
 async def change_stream(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
+    await message.delete()
     df.loc[message.from_user.id, 'stream'] = not df.stream[message.from_user.id]
     df.to_csv('users.csv')
     await message.answer(f"{'Режим стриминга сообщений для ответов ИИ активирован.'if df.stream[message.from_user.id] else "Режим стриминга сообщений для ответов ИИ деактивирован."}")
@@ -89,6 +93,7 @@ async def answer_partnership(message: Message):
 
 async def send_fox(message: Message):
     await bot.send_chat_action(message.chat.id, "upload_photo")
+    await message.delete()
     await message.answer_photo(
         requests.get("https://randomfox.ca/floof").json()["image"],
         caption=f"{message.from_user.first_name}, ваша лисичка",
@@ -96,6 +101,7 @@ async def send_fox(message: Message):
 
 async def send_cat(message: Message):
     await bot.send_chat_action(message.chat.id, "upload_photo")
+    await message.delete()
     await message.answer_photo(
         requests.get("https://api.thecatapi.com/v1/images/search").json()[0]["url"],
         caption=f"{message.from_user.first_name}, ваш котик",
@@ -103,6 +109,7 @@ async def send_cat(message: Message):
 
 async def send_dog(message: Message):
     await bot.send_chat_action(message.chat.id, "upload_photo")
+    await message.delete()
     await message.answer_photo(
         requests.get("https://random.dog/woof.json").json()["url"],
         caption=f"{message.from_user.first_name}, ваша собачка",
@@ -112,19 +119,19 @@ async def callback_pets(callback: CallbackQuery):
     if callback.data == 'fox':
         await callback.message.answer_photo(
             requests.get("https://randomfox.ca/floof").json()["image"],
-            caption=f"{callback.message.chat.first_name}, ваша лисичка",
+            caption=f"{callback.message.chat.first_name}, ваша 🦊 лисичка",
         )
         await callback.answer()
     elif callback.data == 'dog':
         await callback.message.answer_photo(
             requests.get("https://random.dog/woof.json").json()["url"],
-            caption=f"{callback.message.chat.first_name}, ваша собачка",
+            caption=f"{callback.message.chat.first_name}, ваша 🐶 собачка",
         )
         await callback.answer()
     elif callback.data == 'cat':
         await callback.message.answer_photo(
             requests.get("https://api.thecatapi.com/v1/images/search").json()[0]["url"],
-            caption=f"{callback.message.chat.first_name}, ваш котик",
+            caption=f"{callback.message.chat.first_name}, ваш 🐈 котик ",
         )
         await callback.answer()
 
@@ -132,12 +139,15 @@ async def change_model(message: Message):
     if message.from_user.id in config.tg_bot.admin_ids:
         df.loc[message.from_user.id, 'model'] = message.text[1:]
         df.to_csv('users.csv')
+        await message.delete()
         await message.answer(f"Модель обновлена на {models[df.loc[message.from_user.id, 'model']]}.")
     else:
+        await message.delete()
         await message.answer("Пока доступно только администраторам.")
 
 async def clear_history(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
+    await message.delete()
     store[message.from_user.id] = InMemoryHistory()
     await message.answer("История очищена.")
 
@@ -203,8 +213,9 @@ async def answer_langchain(message: Message):
     stop_event = asyncio.Event()
     try:
         await asyncio.gather(show_typing(bot, message.chat.id, stop_event, duration=60), send_stream_text(message))
-    except TelegramBadRequest:
-        logging.error(str(TelegramBadRequest))
+    except ChatGoogleGenerativeAIError:
+        logging.error(str(ChatGoogleGenerativeAIError))
+        message.answer(str(ChatGoogleGenerativeAIError))
     except ValueError as e:
         logging.error(str(e.with_traceback(e.__traceback__)))
     finally:
