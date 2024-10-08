@@ -1,24 +1,23 @@
-import os
 import requests
 import asyncio
 import logging
 import pandas as pd
-from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart, ChatMemberUpdatedFilter, KICKED
-from aiogram.types import Message, ContentType, ChatMemberUpdated, PhotoSize
+from aiogram.types import Message, ContentType, ChatMemberUpdated, PhotoSize, BotCommand, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
 
 from mylibr.filters import WritingOnFile
 from mylibr.aicom import history_chat as hc, history_chat_stream as hcs, store, InMemoryHistory
 from mylibr.features import convert_gemini_to_markdown_v1 as cgtmv1, convert_gemini_to_markdown_v2 as cgtmv2, show_typing
+from mylibr.keyboards import keyboard_help
+from config import config
 
-load_dotenv()
-bot = Bot(os.getenv('TIPTOP_IBOT'))
+
+bot = Bot(config.tg_bot.token)
 dp = Dispatcher()
 df = pd.read_csv('users.csv', index_col='id')
-admins_ids = eval(os.environ.get('ADMIN_IDS'))
 models = {'flash': 'Gemini 1.5 Flash', 'pro': 'Gemini 1.5 Pro', 'mini': 'GPT 4o Mini'}
 handler = logging.FileHandler('logs.log', mode='w', encoding='utf-8')
 handler.addFilter(WritingOnFile())
@@ -39,17 +38,49 @@ async def answer_start(message: Message):
 
 async def answer_help(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
+    stream = df.stream[message.from_user.id]
     await message.answer(
-        f"Ваша модель: {models[df.loc[message.from_user.id, 'model']]}\nСтриминг сообщений ИИ: {'✅' if df.stream[message.from_user.id] else '❎'}\n\nКоманды:\n/stream - {'Отключает режим стриминга ответов ИИ.' if df.stream[message.from_user.id] else "Включает режим стриминга ответов ИИ."}\n/fox - пришлёт лисичку\n/dog - пришлёт собачку\n/cat - пришлёт котика\n/clear - забыть историю сообщений"
+        f"""Ваша модель: {models[df.loc[message.from_user.id, 'model']]}
+Стриминг ответов ИИ: {'✅' if stream else '❎'}
+
+*Команды*:
+/stream - {'Отключает режим стриминга ответов ИИ.' if stream else "Включает режим стриминга ответов ИИ."}
+/fox - пришлёт лисичку
+/dog - пришлёт собачку
+/cat - пришлёт котика
+/clear - забыть историю сообщений""",
+        reply_markup=keyboard_help(stream),
+        parse_mode='Markdown'
     )#\n\n/partnership - Для сотрудничества
-    if message.from_user.id in admins_ids:
-        await message.answer("Для администратора:\n/mini\n/flash\n/pro")
+    if message.from_user.id in config.tg_bot.admin_ids:
+        await message.answer("Для разработчиков:\n/mini\n/flash\n/pro")
 
 async def change_stream(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
     df.loc[message.from_user.id, 'stream'] = not df.stream[message.from_user.id]
     df.to_csv('users.csv')
     await message.answer(f"{'Режим стриминга сообщений для ответов ИИ активирован.'if df.stream[message.from_user.id] else "Режим стриминга сообщений для ответов ИИ деактивирован."}")
+
+async def callback_help(callback: CallbackQuery):
+    if callback.data == 'clear':
+        store[callback.message.chat.id] = InMemoryHistory()
+        await callback.answer("История очищена.")
+    elif '❎' in callback.message.text:
+        df.loc[callback.message.chat.id, 'stream'] = True
+        df.to_csv('users.csv')
+        await callback.message.edit_text(
+            callback.message.text.replace('❎', '✅').replace('Команды:', '*Команды*:'),
+            reply_markup=keyboard_help(True),
+            parse_mode='Markdown')
+        await callback.answer("Стриминг активирован.")
+    else:
+        df.loc[callback.message.chat.id, 'stream'] = False
+        df.to_csv('users.csv')
+        await callback.message.edit_text(
+            callback.message.text.replace('✅', '❎').replace('Команды:', '*Команды*:'),
+            reply_markup=keyboard_help(),
+            parse_mode='Markdown')
+        await callback.answer("Стриминг деактивирован.")
 
 async def answer_partnership(message: Message):
     # сделать так, чтобы пользователь мог написать создателю
@@ -77,8 +108,28 @@ async def send_dog(message: Message):
         caption=f"{message.from_user.first_name}, ваша собачка",
     )
 
+async def callback_pets(callback: CallbackQuery):
+    if callback.data == 'fox':
+        await callback.message.answer_photo(
+            requests.get("https://randomfox.ca/floof").json()["image"],
+            caption=f"{callback.message.chat.first_name}, ваша лисичка",
+        )
+        await callback.answer()
+    elif callback.data == 'dog':
+        await callback.message.answer_photo(
+            requests.get("https://random.dog/woof.json").json()["url"],
+            caption=f"{callback.message.chat.first_name}, ваша собачка",
+        )
+        await callback.answer()
+    elif callback.data == 'cat':
+        await callback.message.answer_photo(
+            requests.get("https://api.thecatapi.com/v1/images/search").json()[0]["url"],
+            caption=f"{callback.message.chat.first_name}, ваш котик",
+        )
+        await callback.answer()
+
 async def change_model(message: Message):
-    if message.from_user.id in admins_ids:
+    if message.from_user.id in config.tg_bot.admin_ids:
         df.loc[message.from_user.id, 'model'] = message.text[1:]
         df.to_csv('users.csv')
         await message.answer(f"Модель обновлена на {models[df.loc[message.from_user.id, 'model']]}.")
@@ -98,12 +149,21 @@ async def answer_langchain(message: Message):
             print('*' * 160 + '\n', text, f'\nTOTAL_TOKENS = {basemessage.usage_metadata['total_tokens']}', len(text))
             while True:
                 if len(text) <= 4096:
-                    await message.answer(text, parse_mode='MarkdownV2')
-                    break
+                    try:
+                        await message.answer(text, parse_mode='MarkdownV2')
+                        break
+                    except TelegramBadRequest:
+                        logging.warning(str(TelegramBadRequest) + '||' + 'send_stream_text')
+                        await message.answer(text, parse_mode='Markdown')
+                        break
                 else:
                     cut = text[0:4096].rfind('\n\n')
                     temporary, text = text[:cut], text[cut:]
-                    await message.answer(temporary, parse_mode='MarkdownV2')
+                    try:
+                        await message.answer(temporary, parse_mode='MarkdownV2')
+                    except TelegramBadRequest:
+                        logging.warning(str(TelegramBadRequest) + '||' + 'send_stream_text cut')
+                        await message.answer(temporary, parse_mode='Markdown')
             stop_event.set()
         else:
             temp_text = ''
@@ -138,12 +198,15 @@ async def answer_langchain(message: Message):
                     temp_text = cgtmv1(temp_text)
                     message_1 = await bot.send_message(message.chat.id, temp_text, parse_mode="Markdown")
                     stop_event.set()
-            print('*' * 160 + '\n', temp_text, f'\nTOTAL_TOKENS = {total_tokens} LENGTH = {total_len}')
+            logging.debug(temp_text)
+            logging.info(f'TOTAL_TOKENS = {total_tokens} LENGTH = {total_len}')
     stop_event = asyncio.Event()
     try:
         await asyncio.gather(show_typing(bot, message.chat.id, stop_event, duration=60), send_stream_text(message))
     except TelegramBadRequest:
         logging.error(str(TelegramBadRequest))
+    except ValueError as e:
+        logging.error(str(e.with_traceback(e.__traceback__)))
     finally:
         stop_event.set()
 
@@ -168,20 +231,35 @@ async def block(event: ChatMemberUpdated):
     df.to_csv('users.csv')
     print(event.from_user.id, event.from_user.first_name, "blocked the bot")
 
-dp.message.register(answer_start, CommandStart())
+async def set_main_menu(bot: Bot):
+
+    main_menu_commands = [
+        BotCommand(command='/help',
+                   description='оказать помощь'),
+        BotCommand(command='/stream',
+                   description='генерация ответов ИИ'),
+        BotCommand(command='/clear',
+                   description='забыть историю сообщений')
+    ]
+
+    await bot.set_my_commands(main_menu_commands)
+
+dp.callback_query.register(callback_help, F.data.in_(['stream', 'clear']))
+dp.callback_query.register(callback_pets, F.data.in_(['fox', 'dog', 'cat']))
 dp.message.register(answer_help, Command(commands=["help"]))
-dp.message.register(change_stream, (Command(commands=["stream"])))
-dp.message.register(answer_partnership, Command(commands=["partnership"]))
-dp.message.register(change_model, Command(commands=["mini", "flash", "pro"]))
+dp.message.register(change_stream, Command(commands=["stream"]))
 dp.message.register(clear_history, Command(commands=["clear"]))
+dp.message.register(change_model, Command(commands=["mini", "flash", "pro"]))
 dp.message.register(send_fox, Command(commands=["fox"]))
 dp.message.register(send_cat, Command(commands=["cat"]))
 dp.message.register(send_dog, Command(commands=["dog"]))
+dp.message.register(answer_start, CommandStart())
 dp.message.register(answer_langchain, F.content_type == ContentType.TEXT)
 dp.message.register(send_photo, F.photo[-1].as_("mphoto"))  # F.content_type == 'photo' or F.photo or lambda m: m.photo
 dp.message.register(send_sticker, lambda m: m.sticker)
 dp.message.register(send_copy)
 dp.my_chat_member.register(block, ChatMemberUpdatedFilter(KICKED))
+dp.startup.register(set_main_menu)
 
 if __name__ == "__main__":
     dp.run_polling(bot)

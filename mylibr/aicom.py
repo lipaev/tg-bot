@@ -1,11 +1,8 @@
-import os
 from typing import List, Iterator
-from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 from aiogram.types import Message
 
-import google.generativeai as genai
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.chat_history import BaseChatMessageHistory
@@ -13,12 +10,11 @@ from langchain_core.messages import BaseMessage, BaseMessageChunk
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from .features import decode_language_code as dlc
+from config import config
 from utils import ChatOpenAI
 
-load_dotenv('../.env')
-api_key = os.getenv('COURSE_API_KEY')
-genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
-
+api_key = config.course_api_key
+GOOGLE_API_KEY = config.google_api_key
 
 class InMemoryHistory(BaseChatMessageHistory, BaseModel):
     """In memory implementation of chat message history."""
