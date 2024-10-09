@@ -8,6 +8,7 @@ from aiogram.filters import Command, CommandStart, ChatMemberUpdatedFilter, KICK
 from aiogram.types import Message, ContentType, ChatMemberUpdated, PhotoSize, BotCommand, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
 from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
+from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk
 
 from mylibr.filters import WritingOnFile
 from mylibr.aicom import history_chat as hc, history_chat_stream as hcs, store, InMemoryHistory
@@ -19,7 +20,8 @@ from config import config
 bot = Bot(config.tg_bot.token)
 dp = Dispatcher()
 df = pd.read_csv('users.csv', index_col='id')
-models = {'flash': 'Gemini 1.5 Flash', 'pro': 'Gemini 1.5 Pro', 'mini': 'GPT 4o Mini'}
+store.update(dict(zip(df.index, map(lambda x: eval(x)[0], df['history'].to_dict().values()))))
+models = {'flash': 'Gemini 1.5 Flash', 'pro': 'Gemini 1.5 Pro', 'mini': 'GPT 4o Mini', 'english': 'Учитель английского'}
 handler = logging.FileHandler('logs.log', mode='w', encoding='utf-8')
 handler.addFilter(WritingOnFile())
 logging.basicConfig(level=logging.DEBUG,
@@ -31,7 +33,12 @@ logging.basicConfig(level=logging.DEBUG,
 async def answer_start(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
     await message.delete()
-    df.loc[message.from_user.id] = [message.from_user.first_name, 0, False, 'flash', message.from_user.language_code]
+    df.loc[message.from_user.id] = [message.from_user.first_name,
+                                    0,
+                                    False,
+                                    'flash',
+                                    message.from_user.language_code,
+                                    str([InMemoryHistory()])]
     df.to_csv('users.csv')
     logging.info(f"{message.from_user.id}, {message.from_user.first_name}, {message.from_user.language_code}")
     await message.answer(
@@ -56,14 +63,7 @@ async def answer_help(message: Message):
         parse_mode='Markdown'
     )#\n\n/partnership - Для сотрудничества
     if message.from_user.id in config.tg_bot.admin_ids:
-        await message.answer("Для разработчиков:\n/mini\n/flash\n/pro")
-
-async def change_stream(message: Message):
-    await bot.send_chat_action(message.chat.id, "typing")
-    await message.delete()
-    df.loc[message.from_user.id, 'stream'] = not df.stream[message.from_user.id]
-    df.to_csv('users.csv')
-    await message.answer(f"{'Режим стриминга сообщений для ответов ИИ активирован.'if df.stream[message.from_user.id] else "Режим стриминга сообщений для ответов ИИ деактивирован."}")
+        await message.answer("Для разработчиков:\n/mini /flash /pro /english")
 
 async def callback_help(callback: CallbackQuery):
     if callback.data == 'clear':
@@ -85,6 +85,13 @@ async def callback_help(callback: CallbackQuery):
             reply_markup=keyboard_help(),
             parse_mode='Markdown')
         await callback.answer("Стриминг деактивирован.")
+
+async def change_stream(message: Message):
+    await bot.send_chat_action(message.chat.id, "typing")
+    await message.delete()
+    df.loc[message.from_user.id, 'stream'] = not df.stream[message.from_user.id]
+    df.to_csv('users.csv')
+    await message.answer(f"{'Режим стриминга сообщений для ответов ИИ активирован.'if df.stream[message.from_user.id] else "Режим стриминга сообщений для ответов ИИ деактивирован."}")
 
 async def answer_partnership(message: Message):
     # сделать так, чтобы пользователь мог написать создателю
@@ -150,13 +157,17 @@ async def clear_history(message: Message):
     await message.delete()
     store[message.from_user.id] = InMemoryHistory()
     await message.answer("История очищена.")
+    df.loc[message.from_user.id, 'history'] = str([InMemoryHistory()])
+    df.to_csv('users.csv')
 
 async def answer_langchain(message: Message):
+    await bot.send_chat_action(message.chat.id, "typing")
     async def send_stream_text(message: Message, stream: bool = df.stream[message.from_user.id]):
         if not stream or df.loc[message.from_user.id, 'model'] == 'mini':
             basemessage = await hc(message, df.loc[message.from_user.id].model)
             text = cgtmv2(basemessage.content)
-            print('*' * 160 + '\n', text, f'\nTOTAL_TOKENS = {basemessage.usage_metadata['total_tokens']}', len(text))
+            logging.debug(text)
+            logging.info(f'TOTAL_TOKENS={basemessage.usage_metadata['total_tokens']} LENGTH={len(text)}')
             while True:
                 if len(text) <= 4096:
                     try:
@@ -219,6 +230,8 @@ async def answer_langchain(message: Message):
     except ValueError as e:
         logging.error(str(e.with_traceback(e.__traceback__)))
     finally:
+        df.loc[message.from_user.id, 'history'] = str([store[message.from_user.id]])
+        df.to_csv('users.csv')
         stop_event.set()
 
 async def send_photo(message: Message, mphoto: PhotoSize):
@@ -260,7 +273,7 @@ dp.callback_query.register(callback_pets, F.data.in_(['fox', 'dog', 'cat']))
 dp.message.register(answer_help, Command(commands=["help"]))
 dp.message.register(change_stream, Command(commands=["stream"]))
 dp.message.register(clear_history, Command(commands=["clear"]))
-dp.message.register(change_model, Command(commands=["mini", "flash", "pro"]))
+dp.message.register(change_model, Command(commands=["mini", "flash", "pro", "english"]))
 dp.message.register(send_fox, Command(commands=["fox"]))
 dp.message.register(send_cat, Command(commands=["cat"]))
 dp.message.register(send_dog, Command(commands=["dog"]))

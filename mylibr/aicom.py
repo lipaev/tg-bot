@@ -23,7 +23,7 @@ class InMemoryHistory(BaseChatMessageHistory, BaseModel):
 
     def add_messages(self, messages: List[BaseMessage]) -> None:
         """Add a list of messages to the store"""
-        self.messages.extend(messages)
+        self.messages.extend([type(message)(message.content) for message in messages])
 
     def clear(self) -> None:
         self.messages = []
@@ -36,7 +36,12 @@ def get_by_session_id(session_id: str) -> BaseChatMessageHistory:
 store = {}
 
 prompt = ChatPromptTemplate.from_messages([
-    ("system", "Тебя зовут - TipTop. Ты умный и остроумный бот. Твой собеседник хорошо знает {lang} язык."),
+    ("system", "Your name is TipTop. You are a smart and helpful bot. Your interlocutor knows {lang} language well."),
+    MessagesPlaceholder(variable_name="history"),
+    ("human", "{question}")])
+
+prompt_english = ChatPromptTemplate.from_messages([
+    ("system", "From now on, you are an engaging and helpful English tutor named TipTop. My English level is between A1 and A2, and I prefer learning through dialogues.\nYour goal is to help me improve my English skills. You will act as a patient and encouraging teacher, focusing on my individual needs and learning style. During our conversations, you will correct my English mistakes constructively and explaining on {lang} language why something is incorrect and offering the correct version, preferably with translation in brackets. If I write a message in English but use a {lang} word, then you translate this word and briefly explain it."),
     MessagesPlaceholder(variable_name="history"),
     ("human", "{question}")])
 
@@ -58,7 +63,13 @@ chain_pro_history = RunnableWithMessageHistory(
         input_messages_key="question",
         history_messages_key="history")
 
-chains = {'mini': chain_course_history, 'flash': chain_flash_history, 'pro': chain_pro_history}
+chain_english_history = RunnableWithMessageHistory(
+        prompt_english | ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0.5, max_output_tokens=4096),
+        get_by_session_id, # Uses the get_by_session_id function defined in the example above.
+        input_messages_key="question",
+        history_messages_key="history")
+
+chains = {'mini': chain_course_history, 'flash': chain_flash_history, 'pro': chain_pro_history, 'english': chain_english_history}
 
 async def history_chat(message: Message, chain: str) -> BaseMessage:
     """Asyncсhronous chat with history"""
@@ -67,8 +78,15 @@ async def history_chat(message: Message, chain: str) -> BaseMessage:
         del store[(message.from_user.id)].messages[:2]
         print(len(store[(message.from_user.id)].messages))
 
-    return await chains[chain].ainvoke(  # noqa: T201
-    {"lang": dlc(message.from_user.language_code), "question": f"{message.text}"},
+    if message.quote:
+        question = f"«{message.quote.text}»\n{message.text}"
+    elif message.reply_to_message:
+        question = f"«{message.reply_to_message.text}»\n{message.text}"
+    else:
+        question = message.text
+
+    return chains[chain].invoke(  # noqa: T201
+    {"lang": dlc(message.from_user.language_code), "question": question},
     config={"configurable": {"session_id": message.from_user.id}}
 )
 
