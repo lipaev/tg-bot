@@ -97,7 +97,14 @@ async def history_chat_stream(message: Message, chain: str) -> Iterator[BaseMess
         del store[(message.from_user.id)].messages[:2]
         print(len(store[(message.from_user.id)].messages))
 
+    if message.quote:
+        question = f"«{message.quote.text}»\n{message.text}"
+    elif message.reply_to_message:
+        question = f"«{message.reply_to_message.text}»\n{message.text}"
+    else:
+        question = message.text
+
     return chains[chain].stream(
-    {"lang": dlc(message.from_user.language_code), "question": f"{message.text}"},
+    {"lang": dlc(message.from_user.language_code), "question": question},
     config={"configurable": {"session_id": message.from_user.id}}
 )
