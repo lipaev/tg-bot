@@ -8,20 +8,21 @@ from aiogram.filters import Command, CommandStart, ChatMemberUpdatedFilter, KICK
 from aiogram.types import Message, ContentType, ChatMemberUpdated, PhotoSize, BotCommand, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
 from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
-from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk
+from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk # For eval()
 
-from mylibr.filters import WritingOnFile
+from mylibr.filters import WritingOnFile, ModelCallback
 from mylibr.aicom import history_chat as hc, history_chat_stream as hcs, store, InMemoryHistory
 from mylibr.features import convert_gemini_to_markdown_v1 as cgtmv1, convert_gemini_to_markdown_v2 as cgtmv2, show_typing
 from mylibr.keyboards import keyboard_help
 from config import config
+from vcb import help_format
 
 
 bot = Bot(config.tg_bot.token)
 dp = Dispatcher()
 df = pd.read_csv('users.csv', index_col='id')
+models = config.models
 store.update(dict(zip(df.index, map(lambda x: eval(x)[0], df['history'].to_dict().values()))))
-models = {'flash': 'Gemini 1.5 Flash', 'pro': 'Gemini 1.5 Pro', 'mini': 'GPT 4o Mini', 'english': 'Учитель английского'}
 handler = logging.FileHandler('logs.log', mode='w', encoding='utf-8')
 handler.addFilter(WritingOnFile())
 logging.basicConfig(level=logging.DEBUG,
@@ -50,41 +51,70 @@ async def answer_help(message: Message):
     await message.delete()
     stream = df.stream[message.from_user.id]
     await message.answer(
-        f"""Ваша модель: {models[df.loc[message.from_user.id, 'model']]}
-Стриминг ответов ИИ: {'✅' if stream else '❎'}
-
-*Команды*:
-/stream - {'Отключает режим стриминга ответов ИИ.' if stream else "Включает режим стриминга ответов ИИ."}
-/fox - пришлёт лисичку
-/dog - пришлёт собачку
-/cat - пришлёт котика
-/clear - забыть историю сообщений""",
-        reply_markup=keyboard_help(stream),
+        help_format(df.model[message.from_user.id], stream),
+        reply_markup=keyboard_help(message.from_user.id, stream, df.model[message.from_user.id]),
         parse_mode='Markdown'
-    )#\n\n/partnership - Для сотрудничества
-    if message.from_user.id in config.tg_bot.admin_ids:
-        await message.answer("Для разработчиков:\n/mini /flash /pro /english")
+    )
 
-async def callback_help(callback: CallbackQuery):
-    if callback.data == 'clear':
-        store[callback.message.chat.id] = InMemoryHistory()
-        await callback.answer("История очищена.")
-    elif '❎' in callback.message.text:
-        df.loc[callback.message.chat.id, 'stream'] = True
-        df.to_csv('users.csv')
-        await callback.message.edit_text(
-            callback.message.text.replace('❎', '✅').replace('Команды:', '*Команды*:'),
-            reply_markup=keyboard_help(True),
-            parse_mode='Markdown')
-        await callback.answer("Стриминг активирован.")
+async def callback_help(query: CallbackQuery):
+    user_id = query.message.chat.id
+    if query.data == 'clear':
+        store[user_id] = InMemoryHistory()
+        await query.answer("История очищена.")
     else:
-        df.loc[callback.message.chat.id, 'stream'] = False
+        df.loc[user_id, 'stream'] = not df.loc[user_id, 'stream']
         df.to_csv('users.csv')
-        await callback.message.edit_text(
-            callback.message.text.replace('✅', '❎').replace('Команды:', '*Команды*:'),
-            reply_markup=keyboard_help(),
+        stream = df.loc[user_id, 'stream']
+        await query.message.edit_text(
+            help_format(df.model[user_id], stream),
+            reply_markup=keyboard_help(user_id, stream, df.model[user_id]),
             parse_mode='Markdown')
-        await callback.answer("Стриминг деактивирован.")
+        await query.answer("Стриминг активирован.")
+
+async def callback_model(query: CallbackQuery, callback_data: ModelCallback):
+
+    stream = df.loc[query.message.chat.id, 'stream']
+
+    async def mini():
+        df.loc[query.message.chat.id, 'model'] = 'mini'
+        df.to_csv('users.csv')
+        await query.message.edit_text(
+            help_format('mini', stream),
+            reply_markup=keyboard_help(query.message.chat.id, stream, 'mini'),
+            parse_mode='Markdown')
+        await query.answer("Модель обновлена.")
+
+    async def pro():
+        df.loc[query.message.chat.id, 'model'] = 'pro'
+        df.to_csv('users.csv')
+        await query.message.edit_text(
+            help_format('pro', stream),
+            reply_markup=keyboard_help(query.message.chat.id, stream, 'pro'),
+            parse_mode='Markdown')
+        await query.answer("Модель обновлена.")
+
+    async def english():
+        df.loc[query.message.chat.id, 'model'] = 'english'
+        df.to_csv('users.csv')
+        await query.message.edit_text(
+            help_format('english', stream),
+            reply_markup=keyboard_help(query.message.chat.id, stream, 'english'),
+            parse_mode='Markdown')
+        await query.answer("Модель обновлена.")
+
+    async def flash():
+        df.loc[query.message.chat.id, 'model'] = 'flash'
+        df.to_csv('users.csv')
+        await query.message.edit_text(
+            help_format('flash', stream),
+            reply_markup=keyboard_help(query.message.chat.id, stream, 'flash'),
+            parse_mode='Markdown')
+        await query.answer("Модель обновлена.")
+
+    if callback_data.user_id == query.message.chat.id:
+        await eval(callback_data.model + '()')
+    else:
+        await query.answer("Error.")
 
 async def change_stream(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
@@ -269,6 +299,7 @@ async def set_main_menu(bot: Bot):
     await bot.set_my_commands(main_menu_commands)
 
 dp.callback_query.register(callback_help, F.data.in_(['stream', 'clear']))
+dp.callback_query.register(callback_model, ModelCallback.filter(F.model.in_(models)))
 dp.callback_query.register(callback_pets, F.data.in_(['fox', 'dog', 'cat']))
 dp.message.register(answer_help, Command(commands=["help"]))
 dp.message.register(change_stream, Command(commands=["stream"]))

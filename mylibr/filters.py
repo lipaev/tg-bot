@@ -1,4 +1,5 @@
 from aiogram.filters import BaseFilter
+from aiogram.filters.callback_data import CallbackData
 from aiogram.types import Message
 from logging import Filter, LogRecord
 from config import config
@@ -17,3 +18,7 @@ class WritingOnFile(Filter):
     """Filter for writing on file"""
     def filter(self, record: LogRecord) -> bool:
         return record.levelname in ['WARNING', 'ERROR', 'CRITICAL']
+
+class ModelCallback(CallbackData, prefix='model'):
+    model: str
+    user_id: int

@@ -3,6 +3,8 @@ from os import getenv
 from dotenv import load_dotenv
 load_dotenv('.env')
 
+models = {'flash': 'Gemini 1.5 Flash', 'english': 'Учитель английского', 'mini': 'GPT 4o Mini', 'pro': 'Gemini 1.5 Pro'}
+
 @dataclass
 class DatabaseConfig:
     database: str         # Название базы данных
@@ -22,6 +24,7 @@ class Config:
     tg_bot: TgBot
     google_api_key: str
     course_api_key: str
+    models: dict[str, str]
 
 config = Config(
     tg_bot=TgBot(
@@ -29,5 +32,6 @@ config = Config(
         admin_ids=eval(getenv('ADMIN_IDS'))
     ),
     google_api_key=getenv('GOOGLE_API_KEY'),
-    course_api_key=getenv('COURSE_API_KEY')
+    course_api_key=getenv('COURSE_API_KEY'),
+    models=models
     )
