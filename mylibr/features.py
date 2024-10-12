@@ -34,58 +34,22 @@ def convert_gemini_to_html(text: str) -> str:
     text = re.sub(r'<(/*)(b|integer)>', r'\<\1\2>', text, flags=re.IGNORECASE)
     return text
 
-def convert_gemini_to_markdown_v1(text: str) -> str:
-    """
-    Converts text from Google Gemini to Markdown for aiogram.
+def convert_gemini_to_markdown(text: str) -> str:
+    """Преобразует текст, возвращаемый Gemini, в формат MarkdownV2 для использования с aiogram."""
 
-    Args:
-        text : Text from Google Gemini to convert
+    escape_chars = "*][)(_}{'`~>#+-=|.!"
+    text = re.sub(r'([{}])'.format(re.escape(escape_chars)), r'\\\1', text)
+    text = re.sub(r'\\\*\\\*(.*?)\\\*\\\*', r'*\1*', text)
+    text = re.sub(r'\\_\\_(.*?)\\_\\_', r'_\1_', text)
+    text = re.sub(r'^\s*\\\* ', ' • ', text, flags=re.MULTILINE)
+    text = re.sub(r'^\s*\\#\\# (.*?)\n', r'*\1*\n', text, flags=re.MULTILINE)
+    text = re.sub(r'^\s*\\#\\#\\# (.*?)\n', r'*_\1_*\n', text, flags=re.MULTILINE)
+    text = re.sub(r'\\`\\`\\`([a-zA-Z]*\W*)\n(.*?)\\`\\`\\`', r'```\1\n\2\n```', text, flags=re.DOTALL)
+    text = re.sub(r'(?<!`)\\`([^`\n]+?)\\`(?!`)', r'`\1`', text)
+    text = re.sub(r'```c\\#\n', '```csharp\n', text)
+    text = re.sub(r'```c\\\+\\\+\n', '```cpp\n', text)
 
-    Returns:
-        str: Converted text for edit in aiogram
-    """
-
-    text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', text)
-    text = re.sub(r'__(.*?)__', r'_\1_', text)
-    text = re.sub(r'^\* ', ' • ', text, flags=re.MULTILINE)
-    text = re.sub(r'^## (.*?)\n', r'*\1*\n', text, flags=re.MULTILINE)
-    text = re.sub(r'^### (.*?)\n', r'*▪️\1*\n', text, flags=re.MULTILINE)
-
-    #text = re.sub(r'```', r'\'\'\'', text)
-    #text = re.sub(r'`', r'\`', text)
-
-    # Преобразуем кодовые блоки в инлайн-код
-    #text = re.sub(r'```(\w+\W*)\n(.*?)```', r'', text, flags=re.DOTALL)
-    #text = re.sub(r'```\n(.*?)\n```', r"<pre>\1</pre>", text, flags=re.DOTALL)
-    #text = re.sub(r'(?<!`)`([^`].*?[^`])`(?!`)', r'<code>\1</code>', text, flags=re.DOTALL)
-    #                  ^|[^`]
     return text
-
-def convert_gemini_to_markdown_v2(text: str) -> str:
-    """
-    Преобразует текст, возвращаемый Gemini, в формат MarkdownV2 для использования с aiogram.
-    """
-    def escape_markdown(text: str) -> str:
-        """
-        Экранирует специальные символы в строке для использования с MarkdownV2.
-        """
-        # Экранируем все символы, которые могут иметь специальное значение в MarkdownV2
-        escape_chars = r'[]()~>#+-=|{}.!'
-        return re.sub(r'([{}])'.format(re.escape(escape_chars)), r'\\\1', text)
-    # Экранируем специальные символы
-    #text = escape_markdown(text)
-
-    # Заменяем обычный Markdown на MarkdownV2
-    text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', text)  # Жирный текст
-    text = re.sub(r'__(.*?)__', r'_\1_', text)       # Курсивный текст
-    text = re.sub(r'^\* ', ' • ', text, flags=re.MULTILINE)
-    text = re.sub(r'^## (.*?)\n', r'*\1*\n', text, flags=re.MULTILINE)
-    text = re.sub(r'^### (.*?)\n', r'*_\1_*\n', text, flags=re.MULTILINE)
-
-    # Преобразуем многострочные блоки кода
-    #text = re.sub(r'```([a-zA-Z]*)\n(.*?)```', r'```\1\n\2\n```', text, flags=re.DOTALL)
-
-    return escape_markdown(text)
 
 async def show_typing(bot: Bot, chat_id: int, event: asyncio.Event, action: str = 'typing', duration: int = 15) -> None:
     """

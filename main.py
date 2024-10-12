@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk # Fo
 
 from mylibr.filters import WritingOnFile, ModelCallback
 from mylibr.aicom import history_chat as hc, history_chat_stream as hcs, store, InMemoryHistory
-from mylibr.features import convert_gemini_to_markdown_v1 as cgtmv1, convert_gemini_to_markdown_v2 as cgtmv2, show_typing
+from mylibr.features import convert_gemini_to_markdown as cgtm, show_typing
 from mylibr.keyboards import keyboard_help
 from config import config
 from vcb import help_format
@@ -26,7 +26,7 @@ store.update(dict(zip(df.index, map(lambda x: eval(x)[0], df['history'].to_dict(
 handler = logging.FileHandler('logs.log', mode='w', encoding='utf-8')
 handler.addFilter(WritingOnFile())
 logging.basicConfig(level=logging.DEBUG,
-                    format='{asctime}|{levelname:7}|{filename}:{lineno}|{name}|  {message}',
+                    format='{asctime}|{levelname:7}|{filename}:{lineno}|{name}||{message}',
                     style='{',
                     handlers=[handler, logging.StreamHandler()])
 
@@ -189,80 +189,129 @@ async def clear_history(message: Message):
     await message.answer("История очищена.")
     df.loc[message.from_user.id, 'history'] = str([InMemoryHistory()])
     df.to_csv('users.csv')
-
+# TODO Настроить шоу тайпинг
 async def answer_langchain(message: Message):
-    await bot.send_chat_action(message.chat.id, "typing")
+    async def bot_send_message(chat_id: int, text: str, parse_mode='MarkdownV2'):
+                try:
+                    return await bot.send_message(chat_id, text, parse_mode=parse_mode)
+                except TelegramBadRequest as e:
+                    if "can't parse entities" in str(e):
+                        return await bot.send_message(chat_id, text)
+                    logging.error(e)
+                except Exception as e:
+                    logging.error(f"Error sending message: {str(e)}")
     async def send_stream_text(message: Message, stream: bool = df.stream[message.from_user.id]):
         if not stream or df.loc[message.from_user.id, 'model'] == 'mini':
             basemessage = await hc(message, df.loc[message.from_user.id].model)
-            text = cgtmv2(basemessage.content)
+            text = basemessage.content
+            ctext = cgtm(text)
             logging.debug(text)
-            logging.info(f'TOTAL_TOKENS={basemessage.usage_metadata['total_tokens']} LENGTH={len(text)}')
-            while True:
-                if len(text) <= 4096:
-                    try:
-                        await message.answer(text, parse_mode='MarkdownV2')
-                        break
-                    except TelegramBadRequest:
-                        logging.warning(str(TelegramBadRequest) + '||' + 'send_stream_text')
-                        await message.answer(text, parse_mode='Markdown')
-                        break
+            logging.debug(ctext)
+            logging.info(f'TOTAL_TOKENS={basemessage.usage_metadata['total_tokens']} LENGTH={len(ctext)}')
+            start = True
+            while start:
+                if len(ctext) <= 4096:
+                    start = False
+                    await bot_send_message(message.chat.id, ctext)
                 else:
-                    cut = text[0:4096].rfind('\n\n')
-                    temporary, text = text[:cut], text[cut:]
-                    try:
-                        await message.answer(temporary, parse_mode='MarkdownV2')
-                    except TelegramBadRequest:
-                        logging.warning(str(TelegramBadRequest) + '||' + 'send_stream_text cut')
-                        await message.answer(temporary, parse_mode='Markdown')
-            stop_event.set()
+                    count = ctext[0:4096].count('```')
+                    code = ctext[0:4096].rfind('```')
+                    cut = ctext[0:4096].rfind('\n\n')
+                    if count % 2 == 0 and count > 0:
+                        if code > cut:
+                            cut = code + 3
+                    elif count > 0:
+                        cut = code
+                    elif cut == -1:
+                        cut = ctext.rfind('\n', 0, 4096)
+                    else:
+                        cut = ctext.rfind(' ', 0, 4096)
+                    temporary, ctext = ctext[:cut], ctext[cut:]
+                    await bot_send_message(message.chat.id, temporary)
         else:
+            async def try_edit_message(message: Message, text: str, parse_mode='MarkdownV2'):
+                try:
+                    await message.edit_text(text, parse_mode=parse_mode)
+                except TelegramBadRequest as e:
+                    if "message is not modified" in str(e):
+                        pass
+                    else:
+                        logging.error(e)
+                except Exception as e:
+                    logging.error(f"Error sending message: {str(e)}")
+            text = ''
             temp_text = ''
             total_tokens = 0
             total_len = 0
             response = await hcs(message, df.loc[message.from_user.id].model)
             for chunk in response:
-                if temp_text:
+                if text:
                     temp_text += chunk.content
                     total_len += len(chunk.content)
                     total_tokens += chunk.usage_metadata['output_tokens']
-                    temp_text = cgtmv1(temp_text)
-                    if len(temp_text) <= 4096:
-                        try:
-                            await message_1.edit_text(temp_text, parse_mode='Markdown')
-                        except TelegramBadRequest:
-                            if "message is not modified" in str(TelegramBadRequest):
-                                pass
-                    else:
-                        cut = temp_text[0:4096].rfind('\n\n')
-                        temporary, temp_text = temp_text[:cut], temp_text[cut:]
-                        try:
-                            await message_1.edit_text(temporary, parse_mode="Markdown")
-                        except TelegramBadRequest:
-                            if "message is not modified" in str(TelegramBadRequest):
-                                pass
-                        message_1 = await bot.send_message(message.chat.id, temp_text, parse_mode='Markdown')
+                    if '\n\n' in temp_text:
+                        text += temp_text
+                        ctext = cgtm(text)
+                        temp_text = ''
+                        if len(ctext) <= 4096:
+                            await try_edit_message(message_1, ctext)
+                        else:
+                            count = text[0:4096].count('```')
+                            code = text[0:4096].rfind('```')
+                            cut = text[0:4096].rfind('\n\n')
+                            if count % 2 == 0 and count > 0:
+                                if code > cut:
+                                    cut = code + 3
+                            elif count > 0:
+                                cut = code
+                            elif cut == -1:
+                                cut = text.rfind('\n', 0, 4096)
+                            else:
+                                cut = text.rfind(' ', 0, 4096)
+                            temporary, text = text[:cut], text[cut:]
+                            await try_edit_message(message_1, cgtm(temporary))
+                            message_1 = await bot_send_message(message.chat.id, cgtm(text))
                 else:
                     temp_text += chunk.content
                     total_len += len(chunk.content)
-                    total_tokens += chunk.usage_metadata['total_tokens']
-                    temp_text = cgtmv1(temp_text)
-                    message_1 = await bot.send_message(message.chat.id, temp_text, parse_mode="Markdown")
-                    stop_event.set()
-            logging.debug(temp_text)
-            logging.info(f'TOTAL_TOKENS = {total_tokens} LENGTH = {total_len}')
-    stop_event = asyncio.Event()
-    try:
-        await asyncio.gather(show_typing(bot, message.chat.id, stop_event, duration=60), send_stream_text(message))
-    except ChatGoogleGenerativeAIError:
-        logging.error(str(ChatGoogleGenerativeAIError))
-        message.answer(str(ChatGoogleGenerativeAIError))
-    except ValueError as e:
-        logging.error(str(e.with_traceback(e.__traceback__)))
-    finally:
-        df.loc[message.from_user.id, 'history'] = str([store[message.from_user.id]])
-        df.to_csv('users.csv')
+                    total_tokens += chunk.usage_metadata['output_tokens']
+                    if '\n\n' in temp_text:
+                        message_1 = await bot_send_message(message.chat.id, cgtm(temp_text))
+                        text += temp_text
+                        temp_text = ''  # Clear the buffer after updating
+            if temp_text:
+                if text:
+                    text += temp_text
+                    ctext = cgtm(text)
+                    if len(ctext) <= 4096:
+                        await try_edit_message(message_1, ctext)
+                    else:
+                        count = text[0:4096].count('```')
+                        code = text[0:4096].rfind('```')
+                        cut = text[0:4096].rfind('\n\n')
+                        if count % 2 == 0 and count > 0:
+                            if code > cut:
+                                cut = code + 3
+                        elif count > 0:
+                            cut = code
+                        elif cut == -1:
+                            cut = text.rfind('\n', 0, 4096)
+                        else:
+                            cut = text.rfind(' ', 0, 4096)
+                        temporary, text = text[:cut], text[cut:]
+                        await try_edit_message(message_1, cgtm(temporary))
+                        await bot_send_message(message.chat.id, cgtm(text))
+                else:
+                    await bot_send_message(message.chat.id, cgtm(temp_text))
+            logging.debug(text or temp_text + '\n' + '=' * 100)
+            logging.debug(cgtm(text or temp_text))
+            logging.info(f'TOTAL_TOKENS = {total_tokens + chunk.usage_metadata['input_tokens']} LENGTH = {total_len}')
         stop_event.set()
+    stop_event = asyncio.Event()
+    await asyncio.gather(show_typing(bot, message.chat.id, stop_event, duration=60), send_stream_text(message))
+    df.loc[message.from_user.id, 'history'] = str([store[message.from_user.id]])
+    df.to_csv('users.csv')
+    stop_event.set()
 
 async def send_photo(message: Message, mphoto: PhotoSize):
     await bot.send_chat_action(message.chat.id, "upload_photo")
