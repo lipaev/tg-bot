@@ -39,15 +39,16 @@ def convert_gemini_to_markdown(text: str) -> str:
 
     escape_chars = "*][)(_}{'`~>#+-=|.!"
     text = re.sub(r'([{}])'.format(re.escape(escape_chars)), r'\\\1', text)
-    text = re.sub(r'\\\*\\\*(.*?)\\\*\\\*', r'*\1*', text)
-    #text = re.sub(r'\\_\\_(.*?)\\_\\_', r'_\1_', text)
+    text = re.sub(r'\\\*\\\*(.+?)\\\*\\\*', r'*\1*', text)
     text = re.sub(r'^\s*\\\* ', ' • ', text, flags=re.MULTILINE)
-    text = re.sub(r'^\s*\\#\\# (.*?)\n', r'*\1*\n', text, flags=re.MULTILINE)
+    text = re.sub(r'\\\*(.+?)\\\*', r'*\1*', text)
+    text = re.sub(r'^\s*\\#\\# (.*?)\n', r'*__\1__*\n', text, flags=re.MULTILINE)
     text = re.sub(r'^\s*\\#\\#\\# (.*?)\n', r'*_\1_*\n', text, flags=re.MULTILINE)
     text = re.sub(r'\\`\\`\\`([a-zA-Z]*\W*)\n(.*?)\\`\\`\\`', r'```\1\n\2\n```', text, flags=re.DOTALL)
     text = re.sub(r'(?<!`)\\`([^`\n]+?)\\`(?!`)', r'`\1`', text)
     text = re.sub(r'```c\\#\n', '```csharp\n', text)
     text = re.sub(r'```c\\\+\\\+\n', '```cpp\n', text)
+    #text = re.sub(r'\\_\\_(.*?)\\_\\_', r'_\1_', text)
 
     return text
 
