@@ -196,8 +196,20 @@ async def answer_langchain(message: Message):
                     return await bot.send_message(chat_id, text, parse_mode=parse_mode)
                 except TelegramBadRequest as e:
                     if "can't parse entities" in str(e):
+                        logging.error(text)
                         return await bot.send_message(chat_id, text)
                     logging.error(e)
+                except Exception as e:
+                    logging.error(f"Error sending message: {str(e)}")
+    async def try_edit_message(message: Message, text: str, parse_mode='MarkdownV2'):
+                try:
+                    await message.edit_text(text, parse_mode=parse_mode)
+                except TelegramBadRequest as e:
+                    if "message is not modified" in str(e):
+                        pass
+                    else:
+                        logging.error(text)
+                        logging.error(e)
                 except Exception as e:
                     logging.error(f"Error sending message: {str(e)}")
     async def send_stream_text(message: Message, stream: bool = df.stream[message.from_user.id]):
@@ -229,16 +241,6 @@ async def answer_langchain(message: Message):
                     temporary, ctext = ctext[:cut], ctext[cut:]
                     await bot_send_message(message.chat.id, temporary)
         else:
-            async def try_edit_message(message: Message, text: str, parse_mode='MarkdownV2'):
-                try:
-                    await message.edit_text(text, parse_mode=parse_mode)
-                except TelegramBadRequest as e:
-                    if "message is not modified" in str(e):
-                        pass
-                    else:
-                        logging.error(e)
-                except Exception as e:
-                    logging.error(f"Error sending message: {str(e)}")
             text = ''
             temp_text = ''
             total_tokens = 0
