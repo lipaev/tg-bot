@@ -7,7 +7,6 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart, ChatMemberUpdatedFilter, KICKED
 from aiogram.types import Message, ContentType, ChatMemberUpdated, PhotoSize, BotCommand, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
-from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
 from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk # For eval()
 
 from mylibr.filters import WritingOnFile, ModelCallback
@@ -37,13 +36,13 @@ async def answer_start(message: Message):
     df.loc[message.from_user.id] = [message.from_user.first_name,
                                     0,
                                     False,
-                                    'flash',
+                                    'english',
                                     message.from_user.language_code,
                                     str([InMemoryHistory()])]
     df.to_csv('users.csv')
     logging.info(f"{message.from_user.id}, {message.from_user.first_name}, {message.from_user.language_code}")
     await message.answer(
-        "*Приветствую!*\nЯ - бот с искусственным интеллектом.\nУмею общаться и делиться картинками.\nДля дополнительной информации отправь - /help!", parse_mode='Markdown'
+        "*Приветствую!*\nЯ - бот с искусственным интеллектом.\nМогу *помочь* с изучением английского языка. Также могу *служить* помощником в различных задачах.\nДля дополнительной информации отправь - /help!", parse_mode='Markdown'
     )
 
 async def answer_help(message: Message):
@@ -189,7 +188,7 @@ async def clear_history(message: Message):
     await message.answer("История очищена.")
     df.loc[message.from_user.id, 'history'] = str([InMemoryHistory()])
     df.to_csv('users.csv')
-# TODO Настроить шоу тайпинг
+
 async def answer_langchain(message: Message):
     async def bot_send_message(chat_id: int, text: str, parse_mode='MarkdownV2'):
                 try:
