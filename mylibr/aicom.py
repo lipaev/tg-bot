@@ -64,7 +64,7 @@ chain_pro_history = RunnableWithMessageHistory(
         history_messages_key="history")
 
 chain_english_history = RunnableWithMessageHistory(
-        prompt_english | ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0.5, max_output_tokens=4096),
+        prompt_english | ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=0.6, max_output_tokens=4096),
         get_by_session_id, # Uses the get_by_session_id function defined in the example above.
         input_messages_key="question",
         history_messages_key="history")

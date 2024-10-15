@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart, ChatMemberUpdatedFilter, KICKED
 from aiogram.types import Message, ContentType, ChatMemberUpdated, PhotoSize, BotCommand, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
+from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
 from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk # For eval()
 
 from mylibr.filters import WritingOnFile, ModelCallback
@@ -127,30 +128,6 @@ async def answer_partnership(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
     await message.answer("По вопросам сотрудничества обращайтесь к lipaeev")
 
-async def send_fox(message: Message):
-    await bot.send_chat_action(message.chat.id, "upload_photo")
-    await message.delete()
-    await message.answer_photo(
-        requests.get("https://randomfox.ca/floof").json()["image"],
-        caption=f"{message.from_user.first_name}, ваша лисичка",
-    )
-
-async def send_cat(message: Message):
-    await bot.send_chat_action(message.chat.id, "upload_photo")
-    await message.delete()
-    await message.answer_photo(
-        requests.get("https://api.thecatapi.com/v1/images/search").json()[0]["url"],
-        caption=f"{message.from_user.first_name}, ваш котик",
-    )
-
-async def send_dog(message: Message):
-    await bot.send_chat_action(message.chat.id, "upload_photo")
-    await message.delete()
-    await message.answer_photo(
-        requests.get("https://random.dog/woof.json").json()["url"],
-        caption=f"{message.from_user.first_name}, ваша собачка",
-    )
-
 async def callback_pets(callback: CallbackQuery):
     if callback.data == 'fox':
         await callback.message.answer_photo(
@@ -190,6 +167,8 @@ async def clear_history(message: Message):
     df.to_csv('users.csv')
 
 async def answer_langchain(message: Message):
+    await bot.send_chat_action(message.chat.id, "typing")
+
     async def bot_send_message(chat_id: int, text: str, parse_mode='MarkdownV2'):
                 try:
                     return await bot.send_message(chat_id, text, parse_mode=parse_mode)
@@ -307,12 +286,10 @@ async def answer_langchain(message: Message):
             logging.debug(text or temp_text + '\n' + '=' * 100)
             logging.debug(cgtm(text or temp_text))
             logging.info(f'TOTAL_TOKENS = {total_tokens + chunk.usage_metadata['input_tokens']} LENGTH = {total_len}')
-        stop_event.set()
-    stop_event = asyncio.Event()
-    await asyncio.gather(show_typing(bot, message.chat.id, stop_event, duration=60), send_stream_text(message))
+
+    await send_stream_text(message)
     df.loc[message.from_user.id, 'history'] = str([store[message.from_user.id]])
     df.to_csv('users.csv')
-    stop_event.set()
 
 async def send_photo(message: Message, mphoto: PhotoSize):
     await bot.send_chat_action(message.chat.id, "upload_photo")
@@ -355,9 +332,6 @@ dp.message.register(answer_help, Command(commands=["help"]))
 dp.message.register(change_stream, Command(commands=["stream"]))
 dp.message.register(clear_history, Command(commands=["clear"]))
 dp.message.register(change_model, Command(commands=["mini", "flash", "pro", "english"]))
-dp.message.register(send_fox, Command(commands=["fox"]))
-dp.message.register(send_cat, Command(commands=["cat"]))
-dp.message.register(send_dog, Command(commands=["dog"]))
 dp.message.register(answer_start, CommandStart())
 dp.message.register(answer_langchain, F.content_type == ContentType.TEXT)
 dp.message.register(send_photo, F.photo[-1].as_("mphoto"))  # F.content_type == 'photo' or F.photo or lambda m: m.photo
