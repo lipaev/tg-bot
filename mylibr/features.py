@@ -52,7 +52,7 @@ def convert_gemini_to_markdown(text: str) -> str:
 
     return text
 
-async def show_typing(bot: Bot, chat_id: int, event: asyncio.Event, action: str = 'typing', duration: int = 15) -> None:
+async def show_typing(bot: Bot, chat_id: int, action: str = 'typing', duration: int = 15) -> None:
     """
     Periodically sends a chat action to simulate typing a message.
 
@@ -61,10 +61,10 @@ async def show_typing(bot: Bot, chat_id: int, event: asyncio.Event, action: str 
     :param duration: The duration in seconds during which the action will be sent.
     """
     end_time = asyncio.get_event_loop().time() + duration
-    while not event.is_set() and asyncio.get_event_loop().time() < end_time:
+    while asyncio.get_event_loop().time() < end_time:
         await bot.send_chat_action(chat_id, action=action)
-        await asyncio.sleep(3)
-        print(f'Прошло {asyncio.get_event_loop().time() - (end_time - duration)} секунд')
+        await asyncio.sleep(5)
+        print('цикл')
 
 def decode_language_code(code: str) -> str:
     languages = {

@@ -11,7 +11,7 @@ from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
 from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk # For eval()
 
 from mylibr.filters import WritingOnFile, ModelCallback
-from mylibr.aicom import history_chat as hc, history_chat_stream as hcs, store, InMemoryHistory
+from mylibr.aicom import history_chat as hc, history_chat_stream as hcs, store, InMemoryHistory, bytes_photo_flux
 from mylibr.features import convert_gemini_to_markdown as cgtm, show_typing
 from mylibr.keyboards import keyboard_help
 from config import config
@@ -61,6 +61,8 @@ async def callback_help(query: CallbackQuery):
     if query.data == 'clear':
         store[user_id] = InMemoryHistory()
         await query.answer("История очищена.")
+        df.loc[user_id, 'history'] = str([InMemoryHistory()])
+        df.to_csv('users.csv')
     else:
         df.loc[user_id, 'stream'] = not df.loc[user_id, 'stream']
         df.to_csv('users.csv')
@@ -73,46 +75,16 @@ async def callback_help(query: CallbackQuery):
 
 async def callback_model(query: CallbackQuery, callback_data: ModelCallback):
 
-    stream = df.loc[query.message.chat.id, 'stream']
-
-    async def mini():
-        df.loc[query.message.chat.id, 'model'] = 'mini'
-        df.to_csv('users.csv')
-        await query.message.edit_text(
-            help_format('mini', stream),
-            reply_markup=keyboard_help(query.message.chat.id, stream, 'mini'),
-            parse_mode='Markdown')
-        await query.answer("Модель обновлена.")
-
-    async def pro():
-        df.loc[query.message.chat.id, 'model'] = 'pro'
-        df.to_csv('users.csv')
-        await query.message.edit_text(
-            help_format('pro', stream),
-            reply_markup=keyboard_help(query.message.chat.id, stream, 'pro'),
-            parse_mode='Markdown')
-        await query.answer("Модель обновлена.")
-
-    async def english():
-        df.loc[query.message.chat.id, 'model'] = 'english'
-        df.to_csv('users.csv')
-        await query.message.edit_text(
-            help_format('english', stream),
-            reply_markup=keyboard_help(query.message.chat.id, stream, 'english'),
-            parse_mode='Markdown')
-        await query.answer("Модель обновлена.")
-
-    async def flash():
-        df.loc[query.message.chat.id, 'model'] = 'flash'
-        df.to_csv('users.csv')
-        await query.message.edit_text(
-            help_format('flash', stream),
-            reply_markup=keyboard_help(query.message.chat.id, stream, 'flash'),
-            parse_mode='Markdown')
-        await query.answer("Модель обновлена.")
-
     if callback_data.user_id == query.message.chat.id:
-        await eval(callback_data.model + '()')
+        stream = df.loc[query.message.chat.id, 'stream']
+        model = callback_data.model
+        await query.message.edit_text(
+            help_format(model, stream),
+            reply_markup=keyboard_help(query.message.chat.id, stream, model),
+            parse_mode='Markdown')
+        await query.answer("Модель обновлена.")
+        df.loc[query.message.chat.id, 'model'] = model
+        df.to_csv('users.csv')
     else:
         await query.answer("Error.")
 
@@ -190,14 +162,15 @@ async def answer_langchain(message: Message):
                         logging.error(e)
                 except Exception as e:
                     logging.error(f"Error sending message: {str(e)}")
-    async def send_stream_text(message: Message, stream: bool = df.stream[message.from_user.id]):
-        if not stream or df.loc[message.from_user.id, 'model'] == 'mini':
+    async def send_stream_text(message: Message):
+        if not df.stream[message.from_user.id]: #  or df.loc[message.from_user.id, 'model'] == 'mini'
             basemessage = await hc(message, df.loc[message.from_user.id].model)
             text = basemessage.content
             ctext = cgtm(text)
+            print('*' * 100)
             logging.debug(text)
             logging.debug(ctext)
-            logging.info(f'TOTAL_TOKENS={basemessage.usage_metadata['total_tokens']} LENGTH={len(ctext)}')
+            #logging.info(f'TOTAL_TOKENS={basemessage.usage_metadata['total_tokens']} LENGTH={len(ctext)}')
             start = True
             while start:
                 if len(ctext) <= 4096:
@@ -227,8 +200,8 @@ async def answer_langchain(message: Message):
             for chunk in response:
                 if text:
                     temp_text += chunk.content
-                    total_len += len(chunk.content)
-                    total_tokens += chunk.usage_metadata['output_tokens']
+                    #total_len += len(chunk.content)
+                    #total_tokens += chunk.usage_metadata['output_tokens']
                     if '\n\n' in temp_text:
                         text += temp_text
                         ctext = cgtm(text)
@@ -253,8 +226,8 @@ async def answer_langchain(message: Message):
                             message_1 = await bot_send_message(message.chat.id, cgtm(text))
                 else:
                     temp_text += chunk.content
-                    total_len += len(chunk.content)
-                    total_tokens += chunk.usage_metadata['output_tokens']
+                    #total_len += len(chunk.content)
+                    #total_tokens += chunk.usage_metadata['output_tokens']
                     if '\n\n' in temp_text:
                         message_1 = await bot_send_message(message.chat.id, cgtm(temp_text))
                         text += temp_text
@@ -285,16 +258,17 @@ async def answer_langchain(message: Message):
                     await bot_send_message(message.chat.id, cgtm(temp_text))
             logging.debug(text or temp_text + '\n' + '=' * 100)
             logging.debug(cgtm(text or temp_text))
-            logging.info(f'TOTAL_TOKENS = {total_tokens + chunk.usage_metadata['input_tokens']} LENGTH = {total_len}')
+            #logging.info(f'TOTAL_TOKENS = {total_tokens + chunk.usage_metadata['input_tokens']} LENGTH = {total_len}')
 
     await send_stream_text(message)
     df.loc[message.from_user.id, 'history'] = str([store[message.from_user.id]])
     df.to_csv('users.csv')
 
-async def send_photo(message: Message, mphoto: PhotoSize):
-    await bot.send_chat_action(message.chat.id, "upload_photo")
-    print(mphoto)
-    await message.answer_photo(mphoto.file_id, caption=message.caption)
+async def send_flux_photo(message: Message):
+
+    m = await bot.send_message(message.chat.id, "Изображение генерируется...")
+    await bytes_photo_flux(message)
+    await m.delete()
 
 async def send_sticker(message: Message):
     await bot.send_chat_action(message.chat.id, "choose_sticker")
@@ -331,10 +305,11 @@ dp.callback_query.register(callback_pets, F.data.in_(['fox', 'dog', 'cat']))
 dp.message.register(answer_help, Command(commands=["help"]))
 dp.message.register(change_stream, Command(commands=["stream"]))
 dp.message.register(clear_history, Command(commands=["clear"]))
-dp.message.register(change_model, Command(commands=["mini", "flash", "pro", "english"]))
+dp.message.register(change_model, Command(commands=["mini", "flash", "pro", "english", "flux"]))
 dp.message.register(answer_start, CommandStart())
+dp.message.register(send_flux_photo, F.content_type == ContentType.TEXT, lambda m: df.model[m.from_user.id] == 'flux' )
 dp.message.register(answer_langchain, F.content_type == ContentType.TEXT)
-dp.message.register(send_photo, F.photo[-1].as_("mphoto"))  # F.content_type == 'photo' or F.photo or lambda m: m.photo
+#dp.message.register(send_photo, F.photo[-1].as_("mphoto"))  # F.content_type == 'photo' or F.photo or lambda m: m.photo
 dp.message.register(send_sticker, lambda m: m.sticker)
 dp.message.register(send_copy)
 dp.my_chat_member.register(block, ChatMemberUpdatedFilter(KICKED))

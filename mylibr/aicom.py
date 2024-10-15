@@ -1,5 +1,8 @@
 from typing import List, Iterator
 from pydantic import BaseModel, Field
+import requests
+import io
+from PIL import Image
 
 from aiogram.types import Message
 
@@ -108,3 +111,16 @@ async def history_chat_stream(message: Message, chain: str) -> Iterator[BaseMess
     {"lang": dlc(message.from_user.language_code), "question": question},
     config={"configurable": {"session_id": message.from_user.id}}
 )
+
+async def bytes_photo_flux(message: Message) -> None:
+
+    response = requests.post(
+     "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-dev",
+     headers={"Authorization": f"Bearer {config.hf_api_key}"},
+     json={"inputs": message.text})
+
+    requests.post(f'https://api.telegram.org/bot{config.tg_bot.token}/sendPhoto?chat_id={message.chat.id}',
+                        files={'photo': response.content})
+    # You can access the image with PIL.Image for example
+    #image = Image.open(io.BytesIO(image_bytes))
+    #return response.content
