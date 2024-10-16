@@ -1,8 +1,6 @@
 from typing import List, Iterator
 from pydantic import BaseModel, Field
 import requests
-import io
-from PIL import Image
 
 from aiogram.types import Message
 
