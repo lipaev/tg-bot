@@ -1,6 +1,7 @@
 from typing import List, Iterator
 from pydantic import BaseModel, Field
 import requests
+import aiohttp
 
 from aiogram.types import Message
 
@@ -29,12 +30,14 @@ class InMemoryHistory(BaseChatMessageHistory, BaseModel):
     def clear(self) -> None:
         self.messages = []
 
-def get_by_session_id(session_id: str) -> BaseChatMessageHistory:
-    if session_id not in store:
-        store[session_id] = InMemoryHistory()
-    return store[session_id]
+def get_by_session_id(session_id: dict) -> BaseChatMessageHistory:
+    user_id = session_id['user_id']
+    chat = session_id['chat']
+    if user_id not in store[chat]:
+        store[chat][user_id] = InMemoryHistory()
+    return store[chat][user_id]
 
-store = {}
+store = {'eng': {}, 'oth': {}}
 
 prompt = ChatPromptTemplate.from_messages([
     ("system", "Your name is TipTop. You are a smart and helpful bot. Your interlocutor knows {lang} language well."),
@@ -72,53 +75,47 @@ chain_english_history = RunnableWithMessageHistory(
 
 chains = {'mini': chain_course_history, 'flash': chain_flash_history, 'pro': chain_pro_history, 'english': chain_english_history}
 
-async def history_chat(message: Message, chain: str) -> BaseMessage:
+async def history_chat(message: Message, chain: str, my_question: str | None = None) -> BaseMessage:
     """Asyncсhronous chat with history"""
 
-    if store.get(message.from_user.id, False) and len(store[(message.from_user.id)].messages) > 44:
-        del store[(message.from_user.id)].messages[:2]
-        print(len(store[(message.from_user.id)].messages))
+    message_text = my_question or message.text
+    chat = 'eng' if chain == 'english' else 'oth'
+
+    if store[chat].get(message.from_user.id, False) and len(store[chat][(message.from_user.id)].messages) > 44:
+        del store[chat][(message.from_user.id)].messages[:2]
+        print(len(store[chat][(message.from_user.id)].messages))
 
     if message.quote:
-        question = f"«{message.quote.text}»\n{message.text}"
+        question = f"«{message.quote.text}»\n{message_text}"
     elif message.reply_to_message:
-        question = f"«{message.reply_to_message.text}»\n{message.text}"
+        question = f"«{message.reply_to_message.text}»\n{message_text}"
     else:
-        question = message.text
+        question = message_text
 
     return chains[chain].invoke(  # noqa: T201
     {"lang": dlc(message.from_user.language_code), "question": question},
-    config={"configurable": {"session_id": message.from_user.id}}
+    config={"configurable": {"session_id": {'user_id': message.from_user.id, 'chat': chat}}}
 )
 
-async def history_chat_stream(message: Message, chain: str) -> Iterator[BaseMessageChunk]:
+async def history_chat_stream(message: Message, chain: str, my_question: str | None = None) -> Iterator[BaseMessageChunk]:
     """Asynchronous chat with history and streaming"""
 
-    if store.get(message.from_user.id, False) and len(store[(message.from_user.id)].messages) > 44:
-        del store[(message.from_user.id)].messages[:2]
-        print(len(store[(message.from_user.id)].messages))
+    message_text = my_question or message.text
+    chat = 'eng' if chain == 'english' else 'oth'
+
+    if store[chat].get(message.from_user.id, False) and len(store[chat][(message.from_user.id)].messages) > 44:
+        del store[chat][(message.from_user.id)].messages[:2]
+        print(len(store[chat][(message.from_user.id)].messages))
 
     if message.quote:
-        question = f"«{message.quote.text}»\n{message.text}"
+        question = f"«{message.quote.text}»\n{message_text}"
     elif message.reply_to_message:
-        question = f"«{message.reply_to_message.text}»\n{message.text}"
+        question = f"«{message.reply_to_message.text}»\n{message_text}"
     else:
-        question = message.text
+        question = message_text
 
     return chains[chain].stream(
     {"lang": dlc(message.from_user.language_code), "question": question},
-    config={"configurable": {"session_id": message.from_user.id}}
+    config={"configurable": {"session_id": {'user_id': message.from_user.id, 'chat': chat}}}
 )
 
-async def bytes_photo_flux(message: Message) -> None:
-
-    response = requests.post(
-     "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-dev",
-     headers={"Authorization": f"Bearer {config.hf_api_key}"},
-     json={"inputs": message.text})
-
-    requests.post(f'https://api.telegram.org/bot{config.tg_bot.token}/sendPhoto?chat_id={message.chat.id}',
-                        files={'photo': response.content})
-    # You can access the image with PIL.Image for example
-    #image = Image.open(io.BytesIO(image_bytes))
-    #return response.content
