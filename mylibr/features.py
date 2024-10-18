@@ -53,19 +53,19 @@ def convert_gemini_to_markdown(text: str) -> str:
 
     return text
 
-async def show_typing(bot: Bot, chat_id: int, action: str = 'typing', duration: int = 15) -> None:
+async def lp(bot: Bot, chat_id: int, cycles: int = 18, action: str = 'typing') -> None:
     """
-    Periodically sends a chat action to simulate typing a message.
+    Send a typing action to a chat.
 
-    :param chat_id: ID of the chat where the action is sent.
-    :param action: Type of action to broadcast. Choose one, depending on what the user is about to receive: *typing* for `text messages`_, *upload_photo* for `photos`_, *record_video* or *upload_video* for `videos`_, *record_voice* or *upload_voice* for `voice notes`_, *upload_document* for `general files`_, *choose_sticker* for `stickers`_, *find_location* for `location data`_, *record_video_note* or *upload_video_note* for `video notes`_.
-    :param duration: The duration in seconds during which the action will be sent.
+    Args:
+        bot: Bot instance.
+        chat_id: Id of chat to send the action.
+        action: `typing` for text, `upload_photo` for photos, `record_video` or `upload_video` for videos, `record_voice` or `upload_voice` for voice notes, `upload_document` for general files, `choose_sticker` for stickers, `find_location` for location data, `record_video_note` or `upload_video_note` for video. Defaults to 'typing'.
+        cycles: Number of cycles of 5 seconds. Defaults to 15.
     """
-    end_time = asyncio.get_event_loop().time() + duration
-    while asyncio.get_event_loop().time() < end_time:
-        await bot.send_chat_action(chat_id, action=action)
+    for _ in range(cycles):
+        await bot.send_chat_action(chat_id, action)
         await asyncio.sleep(5)
-        print('цикл')
 
 def decode_language_code(code: str) -> str:
     languages = {

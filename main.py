@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk # Fo
 
 from mylibr.filters import WritingOnFile, ModelCallback
 from mylibr.aicom import history_chat as hc, history_chat_stream as hcs, store, InMemoryHistory
-from mylibr.features import convert_gemini_to_markdown as cgtm, show_typing
+from mylibr.features import convert_gemini_to_markdown as cgtm, lp
 from mylibr.keyboards import keyboard_help
 from config import config
 from vcb import help_format
@@ -40,6 +40,7 @@ async def answer_start(message: Message):
                                     False,
                                     'english',
                                     message.from_user.language_code,
+                                    str([InMemoryHistory()]),
                                     str([InMemoryHistory()])]
     df.to_csv('users.csv')
     logging.info(f"{message.from_user.id}, {message.from_user.first_name}, {message.from_user.language_code}")
@@ -130,13 +131,14 @@ async def clear_history(message: Message):
     await message.delete()
     if df.loc[message.from_user.id, 'model'] == 'english':
         store['eng'][message.from_user.id] = InMemoryHistory()
+        await message.answer("История английского чата очищена.")
         df.loc[message.from_user.id, 'eng_his'] = str([InMemoryHistory()])
     else:
         store['oth'][message.from_user.id] = InMemoryHistory()
+        await message.answer("История всех чатов, кроме английского, очищена.")
         df.loc[message.from_user.id, 'oth_his'] = str([InMemoryHistory()])
-    await message.answer("История очищена.")
     df.to_csv('users.csv')
-### в целом смс сделать тайпинг и поправить в стриме, сенд флукс фото, или сделать шоу тайпинг
+
 async def send_ai_text(message: Message, my_question: str | None = None, voice_text: str = ''):
 
     if my_question:
@@ -200,7 +202,6 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
         total_len = 0
         response = await hcs(message, df.loc[message.from_user.id].model, message_text)
         for chunk in response:
-            await bot.send_chat_action(message.chat.id, "typing")
             if text:
                 temp_text += chunk.content
                 #total_len += len(chunk.content)
@@ -237,7 +238,6 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
                     text += temp_text
                     temp_text = ''  # Clear the buffer after updating
         if temp_text:   # Handle the last chunk
-            await bot.send_chat_action(message.chat.id, "typing")
             if text:
                 text += temp_text
                 ctext = cgtm(text)
@@ -274,20 +274,32 @@ async def answer_langchain(message: Message):
         df.loc[message.from_user.id, 'oth_his'] = str([store['oth'][message.from_user.id]])
     df.to_csv('users.csv')
 
-async def send_flux_photo(message: Message):
-    await bot.send_chat_action(message.chat.id, "upload_photo")
+async def send_flux_photo(message: Message, my_question: str | None = None):
+
+    task = asyncio.create_task(lp(bot, message.chat.id, cycles=36, action='upload_photo'))
+    if my_question:
+        message_text = my_question
+    else:
+        message_text = message.text
 
     async with aiohttp.ClientSession() as session:
         async with session.post("https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-dev",
                                 headers={"Authorization": f"Bearer {config.hf_api_key}"},
-                                json={"inputs": message.text}) as response:
+                                json={"inputs": message_text}) as response:
             response = await response.content.read()
-
-    input_file = BufferedInputFile(response, filename='photo.jpg')
-    await bot.send_photo(chat_id=message.chat.id, photo=input_file)
+    try:
+        input_file = BufferedInputFile(response, filename='photo.jpg')
+        await bot.send_photo(chat_id=message.chat.id, photo=input_file, caption=my_question if my_question else None)
+    except Exception as e:
+        logging.error(e)
+        await bot.send_message(chat_id=message.chat.id, text="Что-то пошло не так.")
+    finally:
+        task.cancel()
 
 async def handle_voice(message: Message):
-    await bot.send_chat_action(message.chat.id, "typing")
+
+    model = df.loc[message.from_user.id, 'model']
+    await bot.send_chat_action(message.chat.id, "typing" if model != 'flux' else "upload_photo")
 
     file_info = await bot.get_file(message.voice.file_id)
     file_url = f'https://api.telegram.org/file/bot{config.tg_bot.token}/{file_info.file_path}'
@@ -296,17 +308,19 @@ async def handle_voice(message: Message):
     async with aiohttp.ClientSession() as session:
         async with session.post(API_URL, headers=headers, data=requests.get(file_url).content) as response:
             text_from_voice: dict[str, str] = await response.json()
-    #text_from_voice = requests.post(API_URL, headers=headers, data=requests.get(file_url).content).json()
+
     if text_from_voice.get('text', False):
-        print(text_from_voice)
-        await send_ai_text(message, text_from_voice['text'], voice_text=f">{text_from_voice['text'].capitalize()}\n")
+        if model != 'flux':
+            await send_ai_text(message, text_from_voice['text'], voice_text=f">{text_from_voice['text'].capitalize()}\n")
+            if model == 'english':
+                df.loc[message.from_user.id, 'eng_his'] = str([store['eng'][message.from_user.id]])
+            else:
+                df.loc[message.from_user.id, 'oth_his'] = str([store['oth'][message.from_user.id]])
+            df.to_csv('users.csv')
+        else:
+            await send_flux_photo(message, text_from_voice['text'])
     else:
         await message.answer(text_from_voice.get('error', 'Unknown error'))
-    if df.loc[message.from_user.id, 'model'] == 'english':
-        df.loc[message.from_user.id, 'eng_his'] = str([store['eng'][message.from_user.id]])
-    else:
-        df.loc[message.from_user.id, 'oth_his'] = str([store['oth'][message.from_user.id]])
-    df.to_csv('users.csv')
 
 async def send_sticker(message: Message):
     await bot.send_chat_action(message.chat.id, "choose_sticker")
