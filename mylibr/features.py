@@ -46,7 +46,7 @@ def convert_gemini_to_markdown(text: str) -> str:
     text = re.sub(r'^\s*\\#\\#\\# (.*?)\n', r'*_\1_*\n', text, flags=re.MULTILINE)
     text = re.sub(r'\\`\\`\\`([a-zA-Z]*\W*)\n(.*?)\\`\\`\\`', r'```\1\n\2\n```', text, flags=re.DOTALL)
     text = re.sub(r'(?<!`)\\`([^`\n]+?)\\`(?!`)', r'`\1`', text)
-    text = re.sub(r'^\\>', '>', text)
+    text = re.sub(r'^\\>', '>', text, flags=re.MULTILINE)
     text = re.sub(r'```c\\#\n', '```csharp\n', text)
     text = re.sub(r'```c\\\+\\\+\n', '```cpp\n', text)
     #text = re.sub(r'\\_\\_(.*?)\\_\\_', r'_\1_', text)
