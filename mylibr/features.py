@@ -50,6 +50,7 @@ def convert_gemini_to_markdown(text: str) -> str:
     text = re.sub(r'```c\\#\n', '```csharp\n', text)
     text = re.sub(r'```c\\\+\\\+\n', '```cpp\n', text)
     #text = re.sub(r'\\_\\_(.*?)\\_\\_', r'_\1_', text)
+    text = re.sub(r'\\\[(.+?)\\\]\\\((.+?)\\\)', r'[\1](\2)', text)
 
     return text
 
