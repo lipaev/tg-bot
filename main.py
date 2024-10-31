@@ -37,7 +37,7 @@ async def answer_start(message: Message):
     await message.delete()
     df.loc[message.from_user.id] = [message.from_user.first_name,
                                     0,
-                                    False,
+                                    True,
                                     'english',
                                     message.from_user.language_code,
                                     str([InMemoryHistory()]),
@@ -296,6 +296,10 @@ async def send_flux_photo(message: Message, my_question: str | None = None):
     finally:
         task.cancel()
 
+async def asknews(message: Message):
+    await bot.send_chat_action(message.chat.id, "typing")
+    await send_ai_text(message)
+
 async def handle_voice(message: Message):
 
     model = df.loc[message.from_user.id, 'model']
@@ -359,6 +363,7 @@ dp.message.register(change_stream, Command(commands=["stream"]))
 dp.message.register(clear_history, Command(commands=["clear"]))
 dp.message.register(answer_start, CommandStart())
 dp.message.register(send_flux_photo, F.text, lambda m: df.model[m.from_user.id] == 'flux' )
+dp.message.register(asknews, F.text, lambda m: df.model[m.from_user.id] == 'news' )
 dp.message.register(answer_langchain, F.text)
 dp.message.register(handle_voice, F.voice)
 dp.message.register(send_sticker, lambda m: m.sticker)

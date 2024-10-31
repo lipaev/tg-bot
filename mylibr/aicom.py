@@ -6,10 +6,12 @@ import aiohttp
 from aiogram.types import Message
 
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.runnables import RunnableLambda
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import BaseMessage, BaseMessageChunk
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
+from langchain_community.tools import AskNewsSearch
 
 from .features import decode_language_code as dlc
 from config import config
@@ -73,7 +75,15 @@ chain_english_history = RunnableWithMessageHistory(
         input_messages_key="question",
         history_messages_key="history")
 
-chains = {'mini': chain_course_history, 'flash': chain_flash_history, 'pro': chain_pro_history, 'english': chain_english_history}
+chain_news = RunnableLambda(lambda x: AskNewsSearch(max_results=15).invoke(x['question'])) \
+    | PromptTemplate(template="На основании следующих новостей сделай свою детальную новостную статью на русском.\n{news}") \
+        | ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=1)
+
+chains = {'mini': chain_course_history,
+          'flash': chain_flash_history,
+          'pro': chain_pro_history,
+          'english': chain_english_history,
+          'news': chain_news}
 
 async def history_chat(message: Message, chain: str, my_question: str | None = None) -> BaseMessage:
     """Asyncсhronous chat with history"""
@@ -118,4 +128,3 @@ async def history_chat_stream(message: Message, chain: str, my_question: str | N
     {"lang": dlc(message.from_user.language_code), "question": question},
     config={"configurable": {"session_id": {'user_id': message.from_user.id, 'chat': chat}}}
 )
-
