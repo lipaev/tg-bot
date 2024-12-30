@@ -75,8 +75,8 @@ chain_english_history = RunnableWithMessageHistory(
         input_messages_key="question",
         history_messages_key="history")
 
-chain_news = RunnableLambda(lambda x: AskNewsSearch(max_results=15).invoke(x['question'])) \
-    | PromptTemplate(template="На основании следующих новостей сделай свою детальную новостную статью на русском.\n{news}") \
+chain_news = RunnableLambda(lambda x: AskNewsSearch().invoke(x['question'])) \
+    | PromptTemplate(template="На основании следующих новостей сделай свою детальную новостную статью на русском языке с упоминанием источников.\n{news}") \
         | ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=1)
 
 chains = {'mini': chain_course_history,
