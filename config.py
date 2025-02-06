@@ -30,6 +30,7 @@ class Config:
     google_api_key: str
     course_api_key: str
     hf_api_key: str
+    ds_api_key: str
     models: dict[str, str]
 
 config = Config(
@@ -40,5 +41,6 @@ config = Config(
     google_api_key=getenv('GOOGLE_API_KEY'),
     course_api_key=getenv('COURSE_API_KEY'),
     hf_api_key=getenv('HF_API_KEY'),
+    ds_api_key=getenv('DEEPSEEK_API_KEY'),
     models=models
     )

@@ -301,30 +301,33 @@ async def asknews(message: Message):
     await send_ai_text(message)
 
 async def handle_voice(message: Message):
+    try:
+        model = df.loc[message.from_user.id, 'model']
+        await bot.send_chat_action(message.chat.id, "typing" if model != 'flux' else "upload_photo")
 
-    model = df.loc[message.from_user.id, 'model']
-    await bot.send_chat_action(message.chat.id, "typing" if model != 'flux' else "upload_photo")
+        file_info = await bot.get_file(message.voice.file_id)
+        file_url = f'https://api.telegram.org/file/bot{config.tg_bot.token}/{file_info.file_path}'
+        API_URL = "https://api-inference.huggingface.co/models/jonatasgrosman/wav2vec2-large-xlsr-53-english"
+        headers = {"Authorization": f"Bearer {config.hf_api_key}"}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(API_URL, headers=headers, data=requests.get(file_url).content) as response:
+                text_from_voice: dict[str, str] = await response.json()
 
-    file_info = await bot.get_file(message.voice.file_id)
-    file_url = f'https://api.telegram.org/file/bot{config.tg_bot.token}/{file_info.file_path}'
-    API_URL = "https://api-inference.huggingface.co/models/jonatasgrosman/wav2vec2-large-xlsr-53-english"
-    headers = {"Authorization": f"Bearer {config.hf_api_key}"}
-    async with aiohttp.ClientSession() as session:
-        async with session.post(API_URL, headers=headers, data=requests.get(file_url).content) as response:
-            text_from_voice: dict[str, str] = await response.json()
-
-    if text_from_voice.get('text', False):
-        if model != 'flux':
-            await send_ai_text(message, text_from_voice['text'], voice_text=f">{text_from_voice['text'].capitalize()}\n")
-            if model == 'english':
-                df.loc[message.from_user.id, 'eng_his'] = str([store['eng'][message.from_user.id]])
+        if text_from_voice.get('text', False):
+            if model != 'flux':
+                await send_ai_text(message, text_from_voice['text'], voice_text=f">{text_from_voice['text'].capitalize()}\n")
+                if model == 'english':
+                    df.loc[message.from_user.id, 'eng_his'] = str([store['eng'][message.from_user.id]])
+                else:
+                    df.loc[message.from_user.id, 'oth_his'] = str([store['oth'][message.from_user.id]])
+                df.to_csv('users.csv')
             else:
-                df.loc[message.from_user.id, 'oth_his'] = str([store['oth'][message.from_user.id]])
-            df.to_csv('users.csv')
+                await send_flux_photo(message, text_from_voice['text'])
         else:
-            await send_flux_photo(message, text_from_voice['text'])
-    else:
-        await message.answer(text_from_voice.get('error', 'Unknown error'))
+            await message.answer(text_from_voice.get('error', 'Unknown error'))
+    except Exception as e:
+        logging.error(f"Error handling voice message: {e}")
+        await message.answer("Произошла ошибка при обработке голосового сообщения.")
 
 async def send_sticker(message: Message):
     await bot.send_chat_action(message.chat.id, "choose_sticker")
