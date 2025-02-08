@@ -3,12 +3,13 @@ from os import getenv
 from dotenv import load_dotenv
 load_dotenv('.env')
 
-models = {'flash': 'Gemini 1.5 Flash',
+models = {'flash': 'Gemini 2.0 Flash',
           'english': 'Учитель английского',
           'mini': 'GPT 4o Mini',
           'pro': 'Gemini 1.5 Pro',
           'flux': 'FLUX.1 [dev]',
-          'news': 'AskNewsAI'}
+          'news': 'AskNewsAI',
+          'rag': 'RAG ТК РБ'}
 
 @dataclass
 class DatabaseConfig:

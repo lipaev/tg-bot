@@ -34,7 +34,9 @@ def keyboard_help(user_id: int, stream: bool, model: str) -> InlineKeyboardMarku
             *[b for b in [button('mini', user_id),
             button('pro', user_id),
             button('flux', user_id),
-            button('news', user_id)] if  models[model] != b.text])
+            button('news', user_id),
+            button('rag', user_id)] if  models[model] != b.text])
+        builder.adjust(3)
 
     builder.row(
         InlineKeyboardButton(text=['Включить стриминг ответов', 'Отключить стриминг ответов'][stream], callback_data='stream'),
