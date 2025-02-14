@@ -47,12 +47,12 @@ def format_docs(docs):
 store = {'eng': {}, 'oth': {}}
 
 # The source of the data is trusted, hence setting allow_dangerous_deserialization to True is safe in this context.
-db = FAISS.load_local("faiss_db_tkrb", embeddings.GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"), index_name='tkrb', allow_dangerous_deserialization=True)
+db = FAISS.load_local("faiss_db_tkrb", embeddings.GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"), index_name='codes', allow_dangerous_deserialization=True)
 
 retriever = db.as_retriever(
         search_type="similarity_score_threshold",
         search_kwargs={'score_threshold': 0.4,
-                       'k': 10}
+                       'k': 20}
     )
 
 prompt = ChatPromptTemplate.from_messages([
