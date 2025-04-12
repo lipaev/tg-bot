@@ -10,3 +10,4 @@ commands.py
 logs.log
 faiss_db_tkrb
 rag.ipynb
+chroma

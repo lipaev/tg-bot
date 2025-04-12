@@ -1,19 +1,21 @@
 from typing import List, Iterator
 from pydantic import BaseModel, Field
-import requests
-import aiohttp
+#import requests
+#import aiohttp
+#import chromadb
+#from rag_solutions.chromadb_handler import get_or_create_chroma_collection, format_docs_chroma, collection_request
+from rag_solutions.faiss_handler import load_faiss_db, create_faiss_retriever, format_docs_faiss
 
 from aiogram.types import Message
 
-from langchain_google_genai import ChatGoogleGenerativeAI, embeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import BaseMessage, BaseMessageChunk
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
 from langchain_community.tools import AskNewsSearch
-from langchain_community.vectorstores import FAISS
-from langchain.schema import StrOutputParser
+#from langchain.schema import StrOutputParser
 
 from .features import decode_language_code as dlc
 from config import config
@@ -41,19 +43,13 @@ def get_by_session_id(session_id: dict) -> BaseChatMessageHistory:
         store[chat][user_id] = InMemoryHistory()
     return store[chat][user_id]
 
-def format_docs(docs):
-    return "\n\n".join([d.page_content for d in docs])
-
 store = {'eng': {}, 'oth': {}}
 
-# The source of the data is trusted, hence setting allow_dangerous_deserialization to True is safe in this context.
-db = FAISS.load_local("faiss_db_tkrb", embeddings.GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"), index_name='codes', allow_dangerous_deserialization=True)
+db = load_faiss_db(db_path="faiss_db_tkrb", model="cointegrated/LaBSE-en-ru", index_name="codes_LaBSE")
+retriever = create_faiss_retriever(db)
 
-retriever = db.as_retriever(
-        search_type="similarity_score_threshold",
-        search_kwargs={'score_threshold': 0.4,
-                       'k': 20}
-    )
+#chroma_client = chromadb.PersistentClient()
+#chroma_collection = get_or_create_chroma_collection(chroma_client, name="codes", model_name="cointegrated/LaBSE-en-ru")
 
 prompt = ChatPromptTemplate.from_messages([
     ("system", "Your name is TipTop. You are a smart and helpful bot. Your interlocutor knows {lang} language well."),
@@ -61,11 +57,15 @@ prompt = ChatPromptTemplate.from_messages([
     ("human", "{question}")])
 
 template_rag = """
-Ответьте на вопрос на основании следующих статей белорусского законодательства:
+Ниже приведены фрагменты документа. Используй их для ответа на вопрос.
 
+Context:
 {context}
 
-Вопрос: {question}
+Question:
+{question}
+
+Answer:
 """
 
 prompt_english = ChatPromptTemplate.from_messages([
@@ -98,9 +98,11 @@ chain_english_history = RunnableWithMessageHistory(
         history_messages_key="history")
 
 chain_rag = (
-    {"context": RunnableLambda(lambda x: retriever.invoke(x["question"])) | format_docs, "question": RunnablePassthrough()}
+    {"context": RunnableLambda(lambda x: retriever.invoke(x["question"])) | format_docs_faiss, "question": RunnablePassthrough()}
     | ChatPromptTemplate.from_template(template_rag)
-    | ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=1)
+    | ChatGoogleGenerativeAI(model="models/gemini-2.0-flash-001", temperature=1, top_p=1)
+    #models/gemini-2.0-flash-001
+    #models/gemini-2.5-pro-exp-03-25
     #| StrOutputParser()
 )
 

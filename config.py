@@ -9,7 +9,7 @@ models = {'flash': 'Gemini 2.0 Flash',
           'pro': 'Gemini 1.5 Pro',
           'flux': 'FLUX.1 [dev]',
           'news': 'AskNewsAI',
-          'rag': 'RAG ТК РБ'}
+          'rag': 'Закон РБ'}
 
 @dataclass
 class DatabaseConfig:
