@@ -1,4 +1,4 @@
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 #from langchain_google_genai.embeddings import GoogleGenerativeAIEmbeddings
 from langchain_core.embeddings.embeddings import Embeddings
 from sentence_transformers import SentenceTransformer
@@ -38,7 +38,7 @@ def format_docs_faiss(docs):
 # The source of the data is trusted, hence setting allow_dangerous_deserialization to True is safe in this context.
 # FAISS setup
 #db = load_faiss_db(
-#    db_path="faiss_db_tkrb",
+#    db_path="./rag_solutions/faiss_db_tkrb",
 #    model="models/text-embedding-004",
 #    index_name="codes_LaBSE"
 #)
