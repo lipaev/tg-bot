@@ -45,10 +45,10 @@ def get_by_session_id(session_id: dict) -> BaseChatMessageHistory:
 
 store = {'eng': {}, 'oth': {}}
 
-db = load_faiss_db(db_path="faiss_db_tkrb", model="cointegrated/LaBSE-en-ru", index_name="codes_LaBSE")
+db = load_faiss_db(db_path="./rag_solutions/faiss_db_tkrb", model="cointegrated/LaBSE-en-ru", index_name="codes_LaBSE")
 retriever = create_faiss_retriever(db)
 
-#chroma_client = chromadb.PersistentClient()
+#chroma_client = chromadb.PersistentClient("./rag_solutions/chroma")
 #chroma_collection = get_or_create_chroma_collection(chroma_client, name="codes", model_name="cointegrated/LaBSE-en-ru")
 
 prompt = ChatPromptTemplate.from_messages([
