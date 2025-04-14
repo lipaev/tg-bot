@@ -307,7 +307,7 @@ async def handle_voice(message: Message):
 
         file_info = await bot.get_file(message.voice.file_id)
         file_url = f'https://api.telegram.org/file/bot{config.tg_bot.token}/{file_info.file_path}'
-        API_URL = "https://api-inference.huggingface.co/models/jonatasgrosman/wav2vec2-large-xlsr-53-english"
+        API_URL = "https://api-inference.huggingface.co/models/openai/whisper-large-v3"
         headers = {"Authorization": f"Bearer {config.hf_api_key}"}
         async with aiohttp.ClientSession() as session:
             async with session.post(API_URL, headers=headers, data=requests.get(file_url).content) as response:
