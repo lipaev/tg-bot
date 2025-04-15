@@ -57,15 +57,13 @@ prompt = ChatPromptTemplate.from_messages([
     ("human", "{question}")])
 
 template_rag = """
-Ниже приведены фрагменты документа. Используй их для ответа на вопрос.
+Below are articles from the legislation of the Republic of Belarus. Use them to answer the question.
 
-Context:
+Articles:
 {context}
 
 Question:
 {question}
-
-Answer:
 """
 
 prompt_english = ChatPromptTemplate.from_messages([
@@ -100,7 +98,7 @@ chain_english_history = RunnableWithMessageHistory(
 chain_rag = (
     {"context": RunnableLambda(lambda x: retriever.invoke(x["question"])) | format_docs_faiss, "question": RunnablePassthrough()}
     | ChatPromptTemplate.from_template(template_rag)
-    | ChatGoogleGenerativeAI(model="models/gemini-2.0-flash-001", temperature=1, top_p=1)
+    | ChatGoogleGenerativeAI(model="models/gemini-2.0-flash-001", temperature=1, top_p=0.9)
     #models/gemini-2.0-flash-001
     #models/gemini-2.5-pro-exp-03-25
     #| StrOutputParser()
