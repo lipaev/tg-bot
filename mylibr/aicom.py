@@ -45,7 +45,7 @@ def get_by_session_id(session_id: dict) -> BaseChatMessageHistory:
 
 store = {'eng': {}, 'oth': {}}
 
-db = load_faiss_db(db_path="./rag_solutions/faiss_db_tkrb", model="cointegrated/LaBSE-en-ru", index_name="codes_LaBSE")
+db = load_faiss_db(db_path="./rag_solutions/faiss_db_tkrb", model="sergeyzh/LaBSE-ru-sts", index_name="LaBSE-ru-sts")
 retriever = create_faiss_retriever(db)
 
 #chroma_client = chromadb.PersistentClient("./rag_solutions/chroma")
