@@ -2,7 +2,6 @@
 __pycache__
 .env
 users.csv
-test.ipynb
 .env copy
 todo
 messages.py
@@ -12,3 +11,4 @@ faiss_db_tkrb
 rag.ipynb
 chroma
 utils.py
+test*
