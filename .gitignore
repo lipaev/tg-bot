@@ -10,5 +10,4 @@ logs.log
 faiss_db_tkrb
 rag.ipynb
 chroma
-utils.py
 test*

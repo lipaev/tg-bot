@@ -19,7 +19,6 @@ from langchain_community.tools import AskNewsSearch
 
 from .features import decode_language_code as dlc
 from config import config
-from utils import ChatOpenAI
 
 api_key = config.course_api_key
 GOOGLE_API_KEY = config.google_api_key
@@ -71,12 +70,6 @@ prompt_english = ChatPromptTemplate.from_messages([
     MessagesPlaceholder(variable_name="history"),
     ("human", "{question}")])
 
-chain_course_history = RunnableWithMessageHistory(
-        prompt | ChatOpenAI(temperature=1, course_api_key=api_key),
-        get_by_session_id, # Uses the get_by_session_id function defined in the example above.
-        input_messages_key="question",
-        history_messages_key="history")
-
 chain_flash_history = RunnableWithMessageHistory(
         prompt | ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=1, max_output_tokens=4096),
         get_by_session_id, # Uses the get_by_session_id function defined in the example above.
@@ -108,8 +101,7 @@ chain_news = RunnableLambda(lambda x: AskNewsSearch().invoke(x['question'])) \
     | PromptTemplate(template="На основании следующих новостей сделай свою детальную новостную статью на русском языке с упоминанием источников.\n{news}") \
         | ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=1)
 
-chains = {'mini': chain_course_history,
-          'flash': chain_flash_history,
+chains = {'flash': chain_flash_history,
           'pro': chain_pro_history,
           'english': chain_english_history,
           'news': chain_news,

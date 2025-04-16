@@ -35,7 +35,7 @@ def convert_gemini_to_html(text: str) -> str:
     return text
 
 def convert_gemini_to_markdown(text: str) -> str:
-    """Преобразует текст, возвращаемый Gemini и экранированный, в формат MarkdownV2 для использования с aiogram."""
+    """Converts the text returned by Gemini and escaped to the MarkdownV2 format for use with aiogram."""
 
     escape_chars = "*][)(_}{'`~>#+-=|.!"
     text = re.sub(r'([{}])'.format(re.escape(escape_chars)), r'\\\1', text)

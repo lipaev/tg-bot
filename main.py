@@ -167,7 +167,7 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
                 logging.error(e)
         except Exception as e:
             logging.error(f"Error sending message: {str(e)}")
-    if not df.stream[message.from_user.id]: #  or df.loc[message.from_user.id, 'model'] == 'mini'
+    if not df.stream[message.from_user.id]:
         basemessage = await hc(message, df.loc[message.from_user.id].model, message_text)
         text = voice_text + basemessage.content
         ctext = cgtm(text)
@@ -198,8 +198,8 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
     else:
         text = ""
         temp_text = ''
-        total_tokens = 0
-        total_len = 0
+        # total_tokens = 0
+        # total_len = 0
         response = await hcs(message, df.loc[message.from_user.id].model, message_text)
         for chunk in response:
             if text:

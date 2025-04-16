@@ -31,8 +31,7 @@ def keyboard_help(user_id: int, stream: bool, model: str) -> InlineKeyboardMarku
         button('english', user_id)] if  models[model] != b.text])
     if user_id in config.tg_bot.admin_ids:
         builder.row(
-            *[b for b in [button('mini', user_id),
-            button('pro', user_id),
+            *[b for b in [button('pro', user_id),
             button('flux', user_id),
             button('news', user_id),
             button('rag', user_id)] if  models[model] != b.text])
