@@ -23,7 +23,7 @@ from config import config
 api_key = config.course_api_key
 GOOGLE_API_KEY = config.google_api_key
 
-class InMemoryHistory(BaseChatMessageHistory, BaseModel):
+class UserChatHistory(BaseChatMessageHistory, BaseModel):
     """In memory implementation of chat message history."""
 
     messages: List[BaseMessage] = Field(default_factory=list)
@@ -39,10 +39,10 @@ def get_by_session_id(session_id: dict) -> BaseChatMessageHistory:
     user_id = session_id['user_id']
     chat = session_id['chat']
     if user_id not in store[chat]:
-        store[chat][user_id] = InMemoryHistory()
+        store[chat][user_id] = UserChatHistory()
     return store[chat][user_id]
 
-store = {'eng': {}, 'oth': {}}
+store: dict[str, dict[int, UserChatHistory]] = {'eng': {}, 'oth': {}}
 
 db = load_faiss_db(db_path="./rag_solutions/faiss_db_tkrb", model="sergeyzh/LaBSE-ru-sts", index_name="LaBSE-ru-sts")
 retriever = create_faiss_retriever(db)
@@ -71,19 +71,19 @@ prompt_english = ChatPromptTemplate.from_messages([
     ("human", "{question}")])
 
 chain_flash_history = RunnableWithMessageHistory(
-        prompt | ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=1, max_output_tokens=4096),
+        prompt | ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=1, max_output_tokens=8192),
         get_by_session_id, # Uses the get_by_session_id function defined in the example above.
         input_messages_key="question",
         history_messages_key="history")
 
 chain_pro_history = RunnableWithMessageHistory(
-        prompt | ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=1, max_output_tokens=4096),
+        prompt | ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=1, max_output_tokens=8192),
         get_by_session_id, # Uses the get_by_session_id function defined in the example above.
         input_messages_key="question",
         history_messages_key="history")
 
 chain_english_history = RunnableWithMessageHistory(
-        prompt_english | ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.6, max_output_tokens=4096),
+        prompt_english | ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.6, max_output_tokens=8100),
         get_by_session_id, # Uses the get_by_session_id function defined in the example above.
         input_messages_key="question",
         history_messages_key="history")
@@ -91,7 +91,7 @@ chain_english_history = RunnableWithMessageHistory(
 chain_rag = (
     {"context": RunnableLambda(lambda x: retriever.invoke(x["question"])) | format_docs_faiss, "question": RunnablePassthrough()}
     | ChatPromptTemplate.from_template(template_rag)
-    | ChatGoogleGenerativeAI(model="models/gemini-2.0-flash-001", temperature=1, top_p=0.9)
+    | ChatGoogleGenerativeAI(model="models/gemini-2.5-pro-exp-03-25", temperature=1, top_p=0.9, max_output_tokens=65536)
     #models/gemini-2.0-flash-001
     #models/gemini-2.5-pro-exp-03-25
     #| StrOutputParser()
