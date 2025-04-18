@@ -17,7 +17,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, Prom
 from langchain_community.tools import AskNewsSearch
 #from langchain.schema import StrOutputParser
 
-from .features import decode_language_code as dlc
+from .tools import decode_language_code as dlc
 from config import config
 
 api_key = config.course_api_key
@@ -37,12 +37,12 @@ class UserChatHistory(BaseChatMessageHistory, BaseModel):
 
 def get_by_session_id(session_id: dict) -> BaseChatMessageHistory:
     user_id = session_id['user_id']
-    chat = session_id['chat']
-    if user_id not in store[chat]:
-        store[chat][user_id] = UserChatHistory()
-    return store[chat][user_id]
+    lang_group = session_id['lang_group']
+    if user_id not in store[lang_group]:
+        store[lang_group][user_id] = UserChatHistory()
+    return store[lang_group][user_id]
 
-store: dict[str, dict[int, UserChatHistory]] = {'eng': {}, 'oth': {}}
+store: dict[str, dict[int | str | UserChatHistory]] = {'eng': {}, 'oth': {}, 'data': {}}
 
 db = load_faiss_db(db_path="./rag_solutions/faiss_db_tkrb", model="sergeyzh/LaBSE-ru-sts", index_name="LaBSE-ru-sts")
 retriever = create_faiss_retriever(db)
@@ -51,18 +51,21 @@ retriever = create_faiss_retriever(db)
 #chroma_collection = get_or_create_chroma_collection(chroma_client, name="codes", model_name="cointegrated/LaBSE-en-ru")
 
 prompt = ChatPromptTemplate.from_messages([
-    ("system", "Your name is TipTop. You are a smart and helpful bot. Your interlocutor knows {lang} language well."),
+    ("system", "Your name is TipTop. You are a smart and helpful bot."),
     MessagesPlaceholder(variable_name="history"),
     ("human", "{question}")])
 
 template_rag = """
-Below are articles from the legislation of the Republic of Belarus. Use them to answer the question.
+Системная инструкция:
+Ниже приведены статьи из законодательства Республики Беларусь. Используйте их, чтобы ответить на вопрос.
 
-Articles:
+Статьи:
 {context}
 
-Question:
+Вопрос:
 {question}
+
+Ответ:
 """
 
 prompt_english = ChatPromptTemplate.from_messages([
@@ -111,11 +114,11 @@ async def history_chat(message: Message, chain: str, my_question: str | None = N
     """Asyncсhronous chat with history"""
 
     message_text = my_question or message.text
-    chat = 'eng' if chain == 'english' else 'oth'
+    lang_group = 'eng' if chain == 'english' else 'oth'
 
-    if store[chat].get(message.from_user.id, False) and len(store[chat][(message.from_user.id)].messages) > 44:
-        del store[chat][(message.from_user.id)].messages[:2]
-        print(len(store[chat][(message.from_user.id)].messages))
+    if store[lang_group].get(message.from_user.id, False) and len(store[lang_group][(message.from_user.id)].messages) > 44:
+        del store[lang_group][(message.from_user.id)].messages[:2]
+        print(len(store[lang_group][(message.from_user.id)].messages))
 
     if message.quote:
         question = f"«{message.quote.text}»\n{message_text}"
@@ -126,18 +129,18 @@ async def history_chat(message: Message, chain: str, my_question: str | None = N
 
     return chains[chain].invoke(  # noqa: T201
     {"lang": dlc(message.from_user.language_code), "question": question},
-    config={"configurable": {"session_id": {'user_id': message.from_user.id, 'chat': chat}}}
+    config={"configurable": {"session_id": {'user_id': message.from_user.id, 'lang_group': lang_group}}}
 )
 
 async def history_chat_stream(message: Message, chain: str, my_question: str | None = None) -> Iterator[BaseMessageChunk]:
     """Asynchronous chat with history and streaming"""
 
     message_text = my_question or message.text
-    chat = 'eng' if chain == 'english' else 'oth'
+    lang_group = 'eng' if chain == 'english' else 'oth'
 
-    if store[chat].get(message.from_user.id, False) and len(store[chat][(message.from_user.id)].messages) > 44:
-        del store[chat][(message.from_user.id)].messages[:2]
-        print(len(store[chat][(message.from_user.id)].messages))
+    if store[lang_group].get(message.from_user.id, False) and len(store[lang_group][(message.from_user.id)].messages) > 44:
+        del store[lang_group][(message.from_user.id)].messages[:2]
+        print(len(store[lang_group][(message.from_user.id)].messages))
 
     if message.quote:
         question = f"«{message.quote.text}»\n{message_text}"
@@ -148,5 +151,5 @@ async def history_chat_stream(message: Message, chain: str, my_question: str | N
 
     return chains[chain].stream(
     {"lang": dlc(message.from_user.language_code), "question": question},
-    config={"configurable": {"session_id": {'user_id': message.from_user.id, 'chat': chat}}}
+    config={"configurable": {"session_id": {'user_id': message.from_user.id, 'lang_group': lang_group}}}
 )
