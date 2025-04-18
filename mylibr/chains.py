@@ -17,7 +17,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, Prom
 from langchain_community.tools import AskNewsSearch
 #from langchain.schema import StrOutputParser
 
-from .features import decode_language_code as dlc
+from .tools import decode_language_code as dlc
 from config import config
 
 api_key = config.course_api_key
