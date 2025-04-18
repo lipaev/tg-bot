@@ -10,8 +10,8 @@ from aiogram.types import Message, ChatMemberUpdated, BotCommand, CallbackQuery,
 from aiogram.exceptions import TelegramBadRequest
 
 from mylibr.filters import WritingOnFile, ModelCallback
-from mylibr.aicom import history_chat as hc, history_chat_stream as hcs, store, UserChatHistory
-from mylibr.features import convert_gemini_to_markdown as cgtm, lp
+from mylibr.chains import history_chat as hc, history_chat_stream as hcs, store, UserChatHistory
+from mylibr.tools import convert_gemini_to_markdown as cgtm, lp
 from mylibr.keyboards import keyboard_help
 from config import config
 from vcb import help_format
@@ -23,14 +23,19 @@ models = config.models
 
 
 connection = sqlite3.connect('test.db')
-cursor = connection.cursor()
-cursor.execute('SELECT id, stream, model, lang, eng_his, oth_his FROM users')
-result = cursor.fetchall()
-#может сделать класс стор чтобы по атрибутам обращаться
-store.update({'data': dict(map(lambda x: (x[0], {'stream': x[1], 'model': x[2], 'lang': x[3]}), result))})
-store.update({'eng': dict(map(lambda x: (x[0], UserChatHistory.model_validate_json(x[-2])), result))})
-store.update({'oth': dict(map(lambda x: (x[0], UserChatHistory.model_validate_json(x[-1])), result))})
-connection.close()
+try:
+    cursor = connection.cursor()
+    cursor.execute('SELECT id, stream, model, lang, eng_his, oth_his FROM users')
+    result = cursor.fetchall()
+
+    store.update({'data': dict(map(lambda x: (x[0], {'stream': x[1], 'model': x[2], 'lang': x[3]}), result))})
+    store.update({'eng': dict(map(lambda x: (x[0], UserChatHistory.model_validate_json(x[-2])), result))})
+    store.update({'oth': dict(map(lambda x: (x[0], UserChatHistory.model_validate_json(x[-1])), result))})
+except sqlite3.Error as e:
+        logging.error(f"Database error: {e}")
+        raise
+finally:
+        connection.close()
 
 def fetch_user_data(user_id: int) -> dict:
     """
