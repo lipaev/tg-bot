@@ -2,17 +2,16 @@ import requests
 import asyncio
 import aiohttp
 import logging
-import pandas as pd
+import sqlite3
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart, ChatMemberUpdatedFilter, KICKED
-from aiogram.types import Message, ContentType, ChatMemberUpdated, PhotoSize, BotCommand, CallbackQuery, BufferedInputFile
+from aiogram.types import Message, ChatMemberUpdated, BotCommand, CallbackQuery, BufferedInputFile
 from aiogram.exceptions import TelegramBadRequest
-from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk # For eval()
 
 from mylibr.filters import WritingOnFile, ModelCallback
-from mylibr.aicom import history_chat as hc, history_chat_stream as hcs, store, InMemoryHistory
-from mylibr.features import convert_gemini_to_markdown as cgtm, lp
+from mylibr.chains import history_chat as hc, history_chat_stream as hcs, store, UserChatHistory
+from mylibr.tools import convert_gemini_to_markdown as cgtm, lp
 from mylibr.keyboards import keyboard_help
 from config import config
 from vcb import help_format
@@ -20,10 +19,68 @@ from vcb import help_format
 
 bot = Bot(config.tg_bot.token)
 dp = Dispatcher()
-df = pd.read_csv('users.csv', index_col='id')
 models = config.models
-store.update({'eng': dict(zip(df.index, map(lambda x: eval(x)[0], df['eng_his'].to_dict().values())))})
-store.update({'oth': dict(zip(df.index, map(lambda x: eval(x)[0], df['oth_his'].to_dict().values())))})
+
+
+connection = sqlite3.connect('test.db')
+try:
+    cursor = connection.cursor()
+    cursor.execute('SELECT id, stream, model, lang, eng_his, oth_his FROM users')
+    result = cursor.fetchall()
+
+    store.update({'data': dict(map(lambda x: (x[0], {'stream': x[1], 'model': x[2], 'lang': x[3]}), result))})
+    store.update({'eng': dict(map(lambda x: (x[0], UserChatHistory.model_validate_json(x[-2])), result))})
+    store.update({'oth': dict(map(lambda x: (x[0], UserChatHistory.model_validate_json(x[-1])), result))})
+except sqlite3.Error as e:
+        logging.error(f"Database error: {e}")
+        raise
+finally:
+        connection.close()
+
+def fetch_user_data(user_id: int) -> dict:
+    """
+    Fetches user data from the database.
+    Args:
+        user_id (int): The ID of the user whose data is to be fetched.
+    Returns:
+        dict: A dictionary containing user data.
+    """
+    connection = sqlite3.connect('test.db')
+    try:
+        cursor = connection.cursor()
+        cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+        return cursor.fetchone()
+    finally:
+        connection.close()
+
+def update_sql_parameter(id: int, parameter: str, value) -> None:
+    """
+    Updates a specific parameter for a user in the database.
+    Args:
+        id (int): The ID of the user whose parameter is to be updated.
+        parameter (str): The name of the parameter/column to update.
+        value: The new value to set for the specified parameter.
+    Returns:
+        None
+    Raises:
+        sqlite3.Error: If a database error occurs during the operation.
+    """
+
+    allowed_columns = {"stream", "model", "block", "eng_his", "oth_his"}  # Add valid column names here
+    if parameter not in allowed_columns:
+        raise ValueError(f"Invalid column name: {parameter}")
+
+    connection = sqlite3.connect('test.db')
+    try:
+        cursor = connection.cursor()
+        cursor.execute(f'UPDATE users SET {parameter} = ? WHERE id = ?', (value, id))
+        connection.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Database error: {e}")
+        raise
+    finally:
+        connection.close()
+
 handler = logging.FileHandler('logs.log', mode='w', encoding='utf-8')
 handler.addFilter(WritingOnFile())
 logging.basicConfig(level=logging.DEBUG,
@@ -35,48 +92,64 @@ logging.basicConfig(level=logging.DEBUG,
 async def answer_start(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
     await message.delete()
-    df.loc[message.from_user.id] = [message.from_user.first_name,
-                                    0,
-                                    True,
-                                    'english',
-                                    message.from_user.language_code,
-                                    str([InMemoryHistory()]),
-                                    str([InMemoryHistory()])]
-    df.to_csv('users.csv')
-    logging.info(f"{message.from_user.id}, {message.from_user.first_name}, {message.from_user.language_code}")
+
+    user_id = message.from_user.id
+    connection = sqlite3.connect('test.db')
+    try:
+        cursor = connection.cursor()
+        cursor.execute('SELECT id FROM users WHERE id = ?', (user_id, ))
+        if not cursor.fetchone():
+            cursor.execute("""INSERT INTO users (id, first_name, lang)
+                            VALUES (?, ?, ?)""",
+                    (user_id,
+                    message.from_user.first_name,
+                    message.from_user.language_code)
+                    )
+            store['eng'][user_id] = UserChatHistory()
+            store['oth'][user_id] = UserChatHistory()
+            store['data'][user_id] = {'stream': 1, 'model': 'flash', 'lang': message.from_user.language_code}
+        else:
+            cursor.execute('UPDATE users SET block = 0 WHERE id = ?;', (user_id, ))
+        connection.commit()
+    finally:
+        connection.close()
+
+    logging.info(f"{user_id}, {message.from_user.first_name}, {message.from_user.language_code}")
     await message.answer(
-        "*Приветствую!*\nЯ - бот с искусственным интеллектом.\nМогу *помочь* с изучением английского языка. Также могу *служить* помощником в различных задачах.\nДля дополнительной информации отправь - /help!", parse_mode='Markdown'
+        "*Приветствую!*\nЯ - бот с искусственным интеллектом.\nМогу помочь с изучением английского языка. Также могу служить помощником в различных задачах.\nДля дополнительной информации отправь - /help!", parse_mode='Markdown'
     )
 
 async def answer_help(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
     await message.delete()
-    stream = df.stream[message.from_user.id]
+    stream = store['data'][message.from_user.id]['stream']
     await message.answer(
-        help_format(df.model[message.from_user.id], stream),
-        reply_markup=keyboard_help(message.from_user.id, stream, df.model[message.from_user.id]),
+        help_format(store['data'][message.from_user.id]['model'], stream),
+        reply_markup=keyboard_help(message.from_user.id, stream, store['data'][message.from_user.id]['model']),
         parse_mode='Markdown'
     )
 
 async def callback_help(query: CallbackQuery):
     user_id = query.message.chat.id
+    model = store['data'][user_id]['model']
+
     if query.data == 'clear':
         await query.answer("История очищена.")
-        if df.loc[user_id, 'model'] == 'english':
-            store['eng'][user_id] = InMemoryHistory()
-            df.loc[user_id, 'eng_his'] = str([InMemoryHistory()])
+        if model == 'english':
+            store['eng'][user_id] = UserChatHistory()
+            update_sql_parameter(user_id, 'eng_his', '{"messages":[]}')
         else:
-            store['oth'][user_id] = InMemoryHistory()
-            df.loc[user_id, 'oth_his'] = str([InMemoryHistory()])
-        df.to_csv('users.csv')
+            store['oth'][user_id] = UserChatHistory()
+            update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
     else:
-        df.loc[user_id, 'stream'] = not df.loc[user_id, 'stream']
-        df.to_csv('users.csv')
-        stream = df.loc[user_id, 'stream']
+        store['data'][user_id]['stream'] = not store['data'][user_id]['stream']
+        stream = store['data'][user_id]['stream']
+        update_sql_parameter(user_id, 'stream', stream)
         await query.message.edit_text(
-            help_format(df.model[user_id], stream),
-            reply_markup=keyboard_help(user_id, stream, df.model[user_id]),
+            help_format(model, stream),
+            reply_markup=keyboard_help(user_id, stream, model),
             parse_mode='Markdown')
+
         await query.answer("Стриминг активирован.")
 
 async def callback_model(query: CallbackQuery, callback_data: ModelCallback):
@@ -84,10 +157,11 @@ async def callback_model(query: CallbackQuery, callback_data: ModelCallback):
 
     #Checking if id in callback matches with id from query
     if callback_data.user_id == user_id:
-        stream = df.loc[user_id, 'stream']
+        stream = store['data'][user_id]['stream']
         model = callback_data.model
 
-        df.loc[user_id, 'model'] = model
+        update_sql_parameter(user_id, 'model', model)
+        store['data'][user_id]['model'] = model
 
         await query.message.edit_text(
             help_format(model, stream),
@@ -95,16 +169,19 @@ async def callback_model(query: CallbackQuery, callback_data: ModelCallback):
             parse_mode='Markdown')
 
         await query.answer("Модель обновлена.")
-        df.to_csv('users.csv')
     else:
         await query.answer("Error.")
 
 async def change_stream(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
     await message.delete()
-    df.loc[message.from_user.id, 'stream'] = not df.stream[message.from_user.id]
-    df.to_csv('users.csv')
-    await message.answer(f"{'Режим стриминга сообщений для ответов ИИ активирован.'if df.stream[message.from_user.id] else "Режим стриминга сообщений для ответов ИИ деактивирован."}")
+
+    user_id = message.from_user.id
+    store['data'][user_id]['stream'] = not store['data'][user_id]['stream']
+    stream = store['data'][user_id]['stream']
+    update_sql_parameter(user_id, 'stream', stream)
+
+    await message.answer(f"{'Режим стриминга сообщений для ответов ИИ активирован.'if stream else "Режим стриминга сообщений для ответов ИИ деактивирован."}")
 
 async def callback_pets(callback: CallbackQuery):
     if callback.data == 'fox':
@@ -129,15 +206,18 @@ async def callback_pets(callback: CallbackQuery):
 async def clear_history(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
     await message.delete()
-    if df.loc[message.from_user.id, 'model'] == 'english':
-        store['eng'][message.from_user.id] = InMemoryHistory()
+
+    user_id = message.from_user.id
+    model = store['data'][user_id]['model']
+
+    if model == 'english':
+        store['eng'][user_id] = UserChatHistory()
+        update_sql_parameter(user_id, 'eng_his', '{"messages":[]}')
         await message.answer("История английского чата очищена.")
-        df.loc[message.from_user.id, 'eng_his'] = str([InMemoryHistory()])
     else:
-        store['oth'][message.from_user.id] = InMemoryHistory()
+        store['oth'][user_id] = UserChatHistory()
+        update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
         await message.answer("История всех чатов, кроме английского, очищена.")
-        df.loc[message.from_user.id, 'oth_his'] = str([InMemoryHistory()])
-    df.to_csv('users.csv')
 
 async def send_ai_text(message: Message, my_question: str | None = None, voice_text: str = ''):
 
@@ -167,8 +247,8 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
                 logging.error(e)
         except Exception as e:
             logging.error(f"Error sending message: {str(e)}")
-    if not df.stream[message.from_user.id]:
-        basemessage = await hc(message, df.loc[message.from_user.id].model, message_text)
+    if not store['data'][message.from_user.id]['stream']:
+        basemessage = await hc(message, store['data'][message.from_user.id]['model'], message_text)
         text = voice_text + basemessage.content
         ctext = cgtm(text)
         print('*' * 100)
@@ -200,7 +280,7 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
         temp_text = ''
         # total_tokens = 0
         # total_len = 0
-        response = await hcs(message, df.loc[message.from_user.id].model, message_text)
+        response = await hcs(message, store['data'][message.from_user.id]['model'], message_text)
         for chunk in response:
             if text:
                 temp_text += chunk.content
@@ -268,11 +348,12 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
 async def answer_langchain(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
     await send_ai_text(message)
-    if df.loc[message.from_user.id, 'model'] == 'english':
-        df.loc[message.from_user.id, 'eng_his'] = str([store['eng'][message.from_user.id]])
+
+    user_id = message.from_user.id
+    if store['data'][user_id]['model'] == 'english':
+        update_sql_parameter(user_id, "eng_his", store['eng'][user_id].model_dump_json())
     else:
-        df.loc[message.from_user.id, 'oth_his'] = str([store['oth'][message.from_user.id]])
-    df.to_csv('users.csv')
+        update_sql_parameter(user_id, "oth_his", store['oth'][user_id].model_dump_json())
 
 async def send_flux_photo(message: Message, my_question: str | None = None):
 
@@ -302,7 +383,9 @@ async def asknews(message: Message):
 
 async def handle_voice(message: Message):
     try:
-        model = df.loc[message.from_user.id, 'model']
+        user_id = message.from_user.id
+        model = store['data'][user_id]['model']
+
         await bot.send_chat_action(message.chat.id, "typing" if model != 'flux' else "upload_photo")
 
         file_info = await bot.get_file(message.voice.file_id)
@@ -317,10 +400,9 @@ async def handle_voice(message: Message):
             if model != 'flux':
                 await send_ai_text(message, text_from_voice['text'], voice_text=f">{text_from_voice['text'].capitalize()}\n")
                 if model == 'english':
-                    df.loc[message.from_user.id, 'eng_his'] = str([store['eng'][message.from_user.id]])
+                    update_sql_parameter(user_id, 'model', store['eng'][user_id].model_dump_json())
                 else:
-                    df.loc[message.from_user.id, 'oth_his'] = str([store['oth'][message.from_user.id]])
-                df.to_csv('users.csv')
+                    update_sql_parameter(user_id, 'model', store['oth'][user_id].model_dump_json())
             else:
                 await send_flux_photo(message, text_from_voice['text'])
         else:
@@ -341,8 +423,7 @@ async def send_copy(message: Message):
         await message.reply("Извините, но сообщение не распознано.")
 
 async def block(event: ChatMemberUpdated):
-    df.loc[event.from_user.id, 'block'] = 1
-    df.to_csv('users.csv')
+    update_sql_parameter(event.from_user.id, 'block', 1)
     print(event.from_user.id, event.from_user.first_name, "blocked the bot")
 
 async def set_main_menu(bot: Bot):
@@ -365,8 +446,8 @@ dp.message.register(answer_help, Command(commands=["help"]))
 dp.message.register(change_stream, Command(commands=["stream"]))
 dp.message.register(clear_history, Command(commands=["clear"]))
 dp.message.register(answer_start, CommandStart())
-dp.message.register(send_flux_photo, F.text, lambda m: df.model[m.from_user.id] == 'flux' )
-dp.message.register(asknews, F.text, lambda m: df.model[m.from_user.id] == 'news' )
+dp.message.register(send_flux_photo, F.text, lambda m: store['data'][m.from_user.id]['model'] == 'flux' )
+dp.message.register(asknews, F.text, lambda m: store['data'][m.from_user.id]['model'] == 'news' )
 dp.message.register(answer_langchain, F.text)
 dp.message.register(handle_voice, F.voice)
 dp.message.register(send_sticker, lambda m: m.sticker)
