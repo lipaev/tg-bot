@@ -51,18 +51,21 @@ retriever = create_faiss_retriever(db)
 #chroma_collection = get_or_create_chroma_collection(chroma_client, name="codes", model_name="cointegrated/LaBSE-en-ru")
 
 prompt = ChatPromptTemplate.from_messages([
-    ("system", "Your name is TipTop. You are a smart and helpful bot. Your interlocutor uses {lang} language."),
+    ("system", "Your name is TipTop. You are a smart and helpful bot."),
     MessagesPlaceholder(variable_name="history"),
     ("human", "{question}")])
 
 template_rag = """
-Below are articles from the legislation of the Republic of Belarus. Use them to answer the question.
+Системная инструкция:
+Ниже приведены статьи из законодательства Республики Беларусь. Используйте их, чтобы ответить на вопрос.
 
-Articles:
+Статьи:
 {context}
 
-Question:
+Вопрос:
 {question}
+
+Ответ:
 """
 
 prompt_english = ChatPromptTemplate.from_messages([
