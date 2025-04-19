@@ -74,19 +74,19 @@ prompt_english = ChatPromptTemplate.from_messages([
     ("human", "{question}")])
 
 chain_flash_history = RunnableWithMessageHistory(
-        prompt | ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=1, max_output_tokens=8192),
+        prompt | ChatGoogleGenerativeAI(model="models/gemini-2.5-flash-preview-04-17", temperature=1, max_output_tokens=65536),
         get_by_session_id, # Uses the get_by_session_id function defined in the example above.
         input_messages_key="question",
         history_messages_key="history")
 
 chain_pro_history = RunnableWithMessageHistory(
-        prompt | ChatGoogleGenerativeAI(model="gemini-1.5-pro", temperature=1, max_output_tokens=8192),
+        prompt | ChatGoogleGenerativeAI(model="models/gemini-2.5-pro-exp-03-25", temperature=1, max_output_tokens=65536),
         get_by_session_id, # Uses the get_by_session_id function defined in the example above.
         input_messages_key="question",
         history_messages_key="history")
 
 chain_english_history = RunnableWithMessageHistory(
-        prompt_english | ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.6, max_output_tokens=8100),
+        prompt_english | ChatGoogleGenerativeAI(model="models/gemini-2.5-flash-preview-04-17", temperature=0.6, max_output_tokens=65536),
         get_by_session_id, # Uses the get_by_session_id function defined in the example above.
         input_messages_key="question",
         history_messages_key="history")
