@@ -1,4 +1,4 @@
-from typing import List, Iterator
+from typing import List, Iterator, Union
 from pydantic import BaseModel, Field
 #import requests
 #import aiohttp
@@ -12,10 +12,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_core.messages import BaseMessage, BaseMessageChunk
+from langchain_core.messages import BaseMessage, BaseMessageChunk, HumanMessage, AIMessage, SystemMessage, FunctionMessage, AIMessageChunk
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
-from langchain_community.tools import AskNewsSearch
-#from langchain.schema import StrOutputParser
 
 from .tools import decode_language_code as dlc
 from config import config
@@ -26,7 +24,8 @@ GOOGLE_API_KEY = config.google_api_key
 class UserChatHistory(BaseChatMessageHistory, BaseModel):
     """In memory implementation of chat message history."""
 
-    messages: List[BaseMessage] = Field(default_factory=list)
+    # Explicitly define the possible concrete message types in a Union
+    messages: List[Union[HumanMessage, AIMessageChunk, AIMessage, SystemMessage, FunctionMessage]] = Field(default_factory=list)
 
     def add_messages(self, messages: List[BaseMessage]) -> None:
         """Add a list of messages to the store"""
@@ -100,14 +99,9 @@ chain_rag = (
     #| StrOutputParser()
 )
 
-chain_news = RunnableLambda(lambda x: AskNewsSearch().invoke(x['question'])) \
-    | PromptTemplate(template="На основании следующих новостей сделай свою детальную новостную статью на русском языке с упоминанием источников.\n{news}") \
-        | ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=1)
-
 chains = {'flash': chain_flash_history,
           'pro': chain_pro_history,
           'english': chain_english_history,
-          'news': chain_news,
           'rag': chain_rag}
 
 async def history_chat(message: Message, chain: str, my_question: str | None = None) -> BaseMessage:

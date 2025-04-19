@@ -20,6 +20,12 @@ from vcb import help_format
 bot = Bot(config.tg_bot.token)
 dp = Dispatcher()
 models = config.models
+handler = logging.FileHandler('logs.log', mode='w', encoding='utf-8')
+handler.addFilter(WritingOnFile())
+logging.basicConfig(level=logging.DEBUG,
+                    format='{asctime}|{levelname:7}|{filename}:{lineno}|{name}||{message}',
+                    style='{',
+                    handlers=[handler, logging.StreamHandler()])
 
 
 connection = sqlite3.connect('test.db')
@@ -36,6 +42,7 @@ except sqlite3.Error as e:
         raise
 finally:
         connection.close()
+
 
 def fetch_user_data(user_id: int) -> dict:
     """
@@ -80,14 +87,6 @@ def update_sql_parameter(id: int, parameter: str, value) -> None:
         raise
     finally:
         connection.close()
-
-handler = logging.FileHandler('logs.log', mode='w', encoding='utf-8')
-handler.addFilter(WritingOnFile())
-logging.basicConfig(level=logging.DEBUG,
-                    format='{asctime}|{levelname:7}|{filename}:{lineno}|{name}||{message}',
-                    style='{',
-                    handlers=[handler, logging.StreamHandler()])
-
 
 async def answer_start(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
@@ -377,10 +376,6 @@ async def send_flux_photo(message: Message, my_question: str | None = None):
     finally:
         task.cancel()
 
-async def asknews(message: Message):
-    await bot.send_chat_action(message.chat.id, "typing")
-    await send_ai_text(message)
-
 async def handle_voice(message: Message):
     try:
         user_id = message.from_user.id
@@ -447,7 +442,6 @@ dp.message.register(change_stream, Command(commands=["stream"]))
 dp.message.register(clear_history, Command(commands=["clear"]))
 dp.message.register(answer_start, CommandStart())
 dp.message.register(send_flux_photo, F.text, lambda m: store['data'][m.from_user.id]['model'] == 'flux' )
-dp.message.register(asknews, F.text, lambda m: store['data'][m.from_user.id]['model'] == 'news' )
 dp.message.register(answer_langchain, F.text)
 dp.message.register(handle_voice, F.voice)
 dp.message.register(send_sticker, lambda m: m.sticker)

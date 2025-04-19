@@ -33,7 +33,6 @@ def keyboard_help(user_id: int, stream: bool, model: str) -> InlineKeyboardMarku
         builder.row(
             *[b for b in [button('pro', user_id),
             button('flux', user_id),
-            button('news', user_id),
             button('rag', user_id)] if  models[model] != b.text])
         builder.adjust(3)
 
