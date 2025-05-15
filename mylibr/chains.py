@@ -18,7 +18,6 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, Prom
 from .tools import decode_language_code as dlc
 from config import config
 
-api_key = config.course_api_key
 GOOGLE_API_KEY = config.google_api_key
 
 class UserChatHistory(BaseChatMessageHistory, BaseModel):
