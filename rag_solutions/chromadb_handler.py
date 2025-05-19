@@ -31,5 +31,3 @@ def collection_request(collection: Collection, question: str, n_results: int=15)
 
 def format_docs_chroma(results: list[str]) -> str:
     return "\n".join(results)
-
-#"context": RunnableLambda(lambda x: collection_request(chroma_collection, x["question"], 30)) | format_docs_chroma,

@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 from os import getenv
 from dotenv import load_dotenv
+from src.users import Users
+#from random import shuffle
+
 load_dotenv('.env')
 
 models = {'flash': 'Gemini 2.5 Flash',
@@ -8,6 +11,8 @@ models = {'flash': 'Gemini 2.5 Flash',
           'pro': 'Gemini 2.5 Pro',
           'flux': 'FLUX.1 [dev]',
           'rag': 'Закон РБ'}
+cipher = list(getenv('CIPHER'))
+#shuffle(cipher)
 
 @dataclass
 class DatabaseConfig:
@@ -30,14 +35,18 @@ class Config:
     hf_api_key: str
     ds_api_key: str
     models: dict[str, str]
+    users: Users
+    cipher: str
 
 config = Config(
     tg_bot=TgBot(
         token=getenv('VEAPIL_BOT'),
-        admin_ids=eval(getenv('ADMIN_IDS'))
+        admin_ids=[int(getenv('ADMIN_ID'))]
     ),
     google_api_key=getenv('GOOGLE_API_KEY'),
     hf_api_key=getenv('HF_API_KEY'),
     ds_api_key=getenv('DEEPSEEK_API_KEY'),
-    models=models
+    models=models,
+    users=Users(),
+    cipher=''.join(cipher)
     )

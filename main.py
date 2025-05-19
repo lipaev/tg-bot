@@ -1,64 +1,48 @@
 import requests
 import asyncio
-import aiohttp
 import logging
 import sqlite3
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart, ChatMemberUpdatedFilter, KICKED
-from aiogram.types import Message, ChatMemberUpdated, BotCommand, CallbackQuery, BufferedInputFile
+from aiogram.types import Message, ChatMemberUpdated, BotCommand, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
 
-from mylibr.filters import WritingOnFile, ModelCallback
-from mylibr.chains import history_chat as hc, history_chat_stream as hcs, store, UserChatHistory
-from mylibr.tools import convert_gemini_to_markdown as cgtm, lp
-from mylibr.keyboards import keyboard_help
+from src.filters import ModelCallback, available_model
+from src.models import history_chat as hc, history_chat_stream as hcs
+from src.model.flux import generate_flux_photo
+from src.model.whisper import speach_to_text
+from src.tools import convert_gemini_to_markdown as cgtm, lp, help_format
+from src.keyboards import keyboard_help
 from config import config
-from vcb import help_format
 
 
 bot = Bot(config.tg_bot.token)
 dp = Dispatcher()
 models = config.models
-handler = logging.FileHandler('logs.log', mode='w', encoding='utf-8')
-handler.addFilter(WritingOnFile())
-logging.basicConfig(level=logging.DEBUG,
-                    format='{asctime}|{levelname:7}|{filename}:{lineno}|{name}||{message}',
-                    style='{',
-                    handlers=[handler, logging.StreamHandler()])
+users = config.users
+users.load_from_db('test.db')
+
+# Set up file handler for DEBUG and above
+file_handler = logging.FileHandler('logs.log', 'w', 'utf-8', True)
+file_handler.setLevel(logging.DEBUG)
+
+# Set up stream handler for INFO and above
+stream_handler = logging.StreamHandler()
+stream_handler.setLevel(logging.INFO)
+
+# Common formatter
+formatter = logging.Formatter(
+    '{asctime}|{levelname:7}|{filename}:{lineno}|{name}|{message}',
+    style='{'
+)
+file_handler.setFormatter(formatter)
+stream_handler.setFormatter(formatter)
+
+# Configure root logger
+logging.basicConfig(level=logging.DEBUG, handlers=[file_handler, stream_handler])
 
 
-connection = sqlite3.connect('test.db')
-try:
-    cursor = connection.cursor()
-    cursor.execute('SELECT id, stream, model, lang, eng_his, oth_his FROM users')
-    result = cursor.fetchall()
-
-    store.update({'data': dict(map(lambda x: (x[0], {'stream': x[1], 'model': x[2], 'lang': x[3]}), result))})
-    store.update({'eng': dict(map(lambda x: (x[0], UserChatHistory.model_validate_json(x[-2])), result))})
-    store.update({'oth': dict(map(lambda x: (x[0], UserChatHistory.model_validate_json(x[-1])), result))})
-except sqlite3.Error as e:
-        logging.error(f"Database error: {e}")
-        raise
-finally:
-        connection.close()
-
-
-def fetch_user_data(user_id: int) -> dict:
-    """
-    Fetches user data from the database.
-    Args:
-        user_id (int): The ID of the user whose data is to be fetched.
-    Returns:
-        dict: A dictionary containing user data.
-    """
-    connection = sqlite3.connect('test.db')
-    try:
-        cursor = connection.cursor()
-        cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
-        return cursor.fetchone()
-    finally:
-        connection.close()
 
 def update_sql_parameter(id: int, parameter: str, value) -> None:
     """
@@ -104,9 +88,7 @@ async def answer_start(message: Message):
                     message.from_user.first_name,
                     message.from_user.language_code)
                     )
-            store['eng'][user_id] = UserChatHistory()
-            store['oth'][user_id] = UserChatHistory()
-            store['data'][user_id] = {'stream': 1, 'model': 'flash', 'lang': message.from_user.language_code}
+            users.add_user(user_id, lang=message.from_user.language_code)
         else:
             cursor.execute('UPDATE users SET block = 0 WHERE id = ?;', (user_id, ))
         connection.commit()
@@ -121,28 +103,29 @@ async def answer_start(message: Message):
 async def answer_help(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
     await message.delete()
-    stream = store['data'][message.from_user.id]['stream']
+    stream = users.stream(message.from_user.id)
+    model = users.model(message.from_user.id)
     await message.answer(
-        help_format(store['data'][message.from_user.id]['model'], stream),
-        reply_markup=keyboard_help(message.from_user.id, stream, store['data'][message.from_user.id]['model']),
+        help_format(model, stream),
+        reply_markup=keyboard_help(message.from_user.id, stream, model),
         parse_mode='Markdown'
     )
 
 async def callback_help(query: CallbackQuery):
     user_id = query.message.chat.id
-    model = store['data'][user_id]['model']
+    model = users.model(user_id)
 
     if query.data == 'clear':
         await query.answer("История очищена.")
         if model == 'english':
-            store['eng'][user_id] = UserChatHistory()
+            users.clear_english(user_id)
             update_sql_parameter(user_id, 'eng_his', '{"messages":[]}')
         else:
-            store['oth'][user_id] = UserChatHistory()
+            users.clear_other(user_id)
             update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
     else:
-        store['data'][user_id]['stream'] = not store['data'][user_id]['stream']
-        stream = store['data'][user_id]['stream']
+        users.dict[user_id].stream = not users.stream(user_id)
+        stream = users.stream(user_id)
         update_sql_parameter(user_id, 'stream', stream)
         await query.message.edit_text(
             help_format(model, stream),
@@ -156,11 +139,11 @@ async def callback_model(query: CallbackQuery, callback_data: ModelCallback):
 
     #Checking if id in callback matches with id from query
     if callback_data.user_id == user_id:
-        stream = store['data'][user_id]['stream']
+        stream = users.stream(user_id)
         model = callback_data.model
 
         update_sql_parameter(user_id, 'model', model)
-        store['data'][user_id]['model'] = model
+        users.dict[user_id].model = model
 
         await query.message.edit_text(
             help_format(model, stream),
@@ -176,8 +159,8 @@ async def change_stream(message: Message):
     await message.delete()
 
     user_id = message.from_user.id
-    store['data'][user_id]['stream'] = not store['data'][user_id]['stream']
-    stream = store['data'][user_id]['stream']
+    users.dict[user_id].stream = not users.stream(user_id)
+    stream = users.stream(user_id)
     update_sql_parameter(user_id, 'stream', stream)
 
     await message.answer(f"{'Режим стриминга сообщений для ответов ИИ активирован.'if stream else "Режим стриминга сообщений для ответов ИИ деактивирован."}")
@@ -207,14 +190,14 @@ async def clear_history(message: Message):
     await message.delete()
 
     user_id = message.from_user.id
-    model = store['data'][user_id]['model']
+    model = users.model(user_id)
 
     if model == 'english':
-        store['eng'][user_id] = UserChatHistory()
+        users.clear_english(user_id)
         update_sql_parameter(user_id, 'eng_his', '{"messages":[]}')
         await message.answer("История английского чата очищена.")
     else:
-        store['oth'][user_id] = UserChatHistory()
+        users.clear_other(user_id)
         update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
         await message.answer("История всех чатов, кроме английского, очищена.")
 
@@ -224,6 +207,8 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
         message_text = my_question
     else:
         message_text = message.text
+
+    user_model = await available_model(message, bot)
 
     async def bot_send_message(chat_id: int, text: str, parse_mode='MarkdownV2'):
         try:
@@ -246,14 +231,12 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
                 logging.error(e)
         except Exception as e:
             logging.error(f"Error sending message: {str(e)}")
-    if not store['data'][message.from_user.id]['stream']:
-        basemessage = await hc(message, store['data'][message.from_user.id]['model'], message_text)
+    if not users.stream(message.from_user.id):
+        basemessage = await hc(message, user_model, message_text)
         text = voice_text + basemessage.content
         ctext = cgtm(text)
-        print('*' * 100)
         logging.debug(text)
         logging.debug(ctext)
-        #logging.info(f'TOTAL_TOKENS={basemessage.usage_metadata['total_tokens']} LENGTH={len(ctext)}')
         start = True
         while start:
             if len(ctext) <= 4096:
@@ -277,14 +260,10 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
     else:
         text = ""
         temp_text = ''
-        # total_tokens = 0
-        # total_len = 0
-        response = await hcs(message, store['data'][message.from_user.id]['model'], message_text)
+        response = await hcs(message, user_model, message_text)
         for chunk in response:
             if text:
                 temp_text += chunk.content
-                #total_len += len(chunk.content)
-                #total_tokens += chunk.usage_metadata['output_tokens']
                 if '\n\n' in temp_text:
                     text += temp_text
                     ctext = cgtm(text)
@@ -310,8 +289,6 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
             else:
                 temp_text += voice_text + chunk.content
                 voice_text = ""
-                #total_len += len(chunk.content)
-                #total_tokens += chunk.usage_metadata['output_tokens']
                 if '\n\n' in temp_text:
                     message_1 = await bot_send_message(message.chat.id, cgtm(temp_text))
                     text += temp_text
@@ -342,69 +319,51 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
                 await bot_send_message(message.chat.id, cgtm(temp_text))
         logging.debug(text or temp_text + '\n' + '=' * 100)
         logging.debug(cgtm(text or temp_text))
-        #logging.info(f'TOTAL_TOKENS = {total_tokens + chunk.usage_metadata['input_tokens']} LENGTH = {total_len}')
 
 async def answer_langchain(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
     await send_ai_text(message)
 
     user_id = message.from_user.id
-    if store['data'][user_id]['model'] == 'english':
-        update_sql_parameter(user_id, "eng_his", store['eng'][user_id].model_dump_json())
+    if users.model(user_id) == 'english':
+        update_sql_parameter(user_id, "eng_his", users.english(user_id).model_dump_json())
     else:
-        update_sql_parameter(user_id, "oth_his", store['oth'][user_id].model_dump_json())
+        update_sql_parameter(user_id, "oth_his", users.other(user_id).model_dump_json())
 
 async def send_flux_photo(message: Message, my_question: str | None = None):
 
     task = asyncio.create_task(lp(bot, message.chat.id, cycles=36, action='upload_photo'))
-    if my_question:
-        message_text = my_question
-    else:
-        message_text = message.text
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post("https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-dev",
-                                headers={"Authorization": f"Bearer {config.hf_api_key}"},
-                                json={"inputs": message_text}) as response:
-            response = await response.content.read()
     try:
-        input_file = BufferedInputFile(response, filename='photo.jpg')
+        input_file = await generate_flux_photo(message, my_question)
         await bot.send_photo(chat_id=message.chat.id, photo=input_file, caption=my_question if my_question else None)
     except Exception as e:
         logging.error(e)
-        await bot.send_message(chat_id=message.chat.id, text="Что-то пошло не так.")
+        await bot.send_message(chat_id=message.chat.id, text=f"An error occured: {e}")
     finally:
         task.cancel()
 
 async def handle_voice(message: Message):
     try:
         user_id = message.from_user.id
-        model = store['data'][user_id]['model']
 
-        await bot.send_chat_action(message.chat.id, "typing" if model != 'flux' else "upload_photo")
+        await bot.send_chat_action(message.chat.id, "typing" if users.model(user_id) != 'flux' else "upload_photo")
 
-        file_info = await bot.get_file(message.voice.file_id)
-        file_url = f'https://api.telegram.org/file/bot{config.tg_bot.token}/{file_info.file_path}'
-        API_URL = "https://api-inference.huggingface.co/models/openai/whisper-large-v3"
-        headers = {"Authorization": f"Bearer {config.hf_api_key}"}
-        async with aiohttp.ClientSession() as session:
-            async with session.post(API_URL, headers=headers, data=requests.get(file_url).content) as response:
-                text_from_voice: dict[str, str] = await response.json()
+        text_from_voice = await speach_to_text(message, bot)
 
-        if text_from_voice.get('text', False):
-            if model != 'flux':
-                await send_ai_text(message, text_from_voice['text'], voice_text=f">{text_from_voice['text'].capitalize()}\n")
-                if model == 'english':
-                    update_sql_parameter(user_id, 'model', store['eng'][user_id].model_dump_json())
+        if text_from_voice:
+            if users.model(user_id) != 'flux':
+                await send_ai_text(message, text_from_voice, voice_text=f">{text_from_voice.capitalize()}\n")
+                if users.model(user_id) == 'english':
+                    update_sql_parameter(user_id, 'eng_his', users.english(user_id).model_dump_json())
                 else:
-                    update_sql_parameter(user_id, 'model', store['oth'][user_id].model_dump_json())
+                    update_sql_parameter(user_id, 'oth_his', users.other(user_id).model_dump_json())
             else:
-                await send_flux_photo(message, text_from_voice['text'])
+                await send_flux_photo(message, text_from_voice)
         else:
-            await message.answer(text_from_voice.get('error', 'Unknown error'))
+            await message.answer('An error occurred while extracting the text.')
     except Exception as e:
-        logging.error(f"Error handling voice message: {e}")
-        await message.answer("Произошла ошибка при обработке голосового сообщения.")
+        await message.answer(f"Error handling voice message: {e}")
 
 async def send_sticker(message: Message):
     await bot.send_chat_action(message.chat.id, "choose_sticker")
@@ -437,12 +396,12 @@ async def set_main_menu(bot: Bot):
 dp.callback_query.register(callback_help, F.data.in_(['stream', 'clear']))
 dp.callback_query.register(callback_model, ModelCallback.filter(F.model.in_(models)))
 dp.callback_query.register(callback_pets, F.data.in_(['fox', 'dog', 'cat']))
-dp.message.register(answer_help, Command(commands=["help"]))
+dp.message.register(answer_help, Command(commands=["help"]))#help
 dp.message.register(change_stream, Command(commands=["stream"]))
 dp.message.register(clear_history, Command(commands=["clear"]))
-dp.message.register(answer_start, CommandStart())
-dp.message.register(send_flux_photo, F.text, lambda m: store['data'][m.from_user.id]['model'] == 'flux' )
-dp.message.register(answer_langchain, F.text)
+dp.message.register(answer_start, CommandStart())#start
+dp.message.register(send_flux_photo, F.text, lambda m: users.model(m.from_user.id) == 'flux' )#flux_answer
+dp.message.register(answer_langchain, F.text)#model_answer
 dp.message.register(handle_voice, F.voice)
 dp.message.register(send_sticker, lambda m: m.sticker)
 dp.message.register(send_copy)

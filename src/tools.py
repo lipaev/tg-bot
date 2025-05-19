@@ -1,6 +1,7 @@
 import re
 import asyncio
 from aiogram import Bot
+from config import config
 
 def convert_gemini_to_html(text: str) -> str:
     """
@@ -109,3 +110,7 @@ def decode_language_code(code: str) -> str:
     }
 
     return languages.get(code, code)
+
+
+def help_format(model: str, stream: bool):
+    return f"""Ваша модель: {config.models[model]}\nСтриминг ответов ИИ: {'✅' if stream else '❎'}\n\n*Команды*:\n/stream - {'Отключает режим стриминга ответов ИИ.' if stream else "Включает режим стриминга ответов ИИ."}\n/clear - забыть историю сообщений"""
