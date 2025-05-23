@@ -103,7 +103,7 @@ async def callback_help(query: CallbackQuery):
                 help_format(model, stream),
                 reply_markup=keyboard_help(user_id, stream, model),
                 parse_mode='Markdown')
-            await query.answer("Стриминг активирован.")
+            await query.answer("Стриминг " + ["деактивирован.", "активирован."][stream])
         case "clear":
             if model == 'english':
                 users.clear_english(user_id)

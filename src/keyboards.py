@@ -55,9 +55,12 @@ def keyboard_help(user_id: int, stream: bool, model: str) -> InlineKeyboardMarku
 
         builder.adjust(3)
 
+    stream_text = ['Включить стриминг ответов', 'Отключить стриминг ответов'][stream]
+    clear_text = 'Очистить историю английского чата' if model == 'english' else 'Очистить историю прочего чата'
+
     builder.row(
-        InlineKeyboardButton(text=['Включить стриминг ответов', 'Отключить стриминг ответов'][stream], callback_data='stream'),
-        InlineKeyboardButton(text='Забыть историю сообщений', callback_data='clear'),
+        InlineKeyboardButton(text=stream_text, callback_data='stream'),
+        InlineKeyboardButton(text=clear_text, callback_data='clear'),
         width=1)
 
     return builder.as_markup()
