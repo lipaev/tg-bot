@@ -32,7 +32,8 @@ def keyboard_help(user_id: int, stream: bool, model: str) -> InlineKeyboardMarku
 
     buttons_for_anyone = [
         model_button('flash', user_id),
-        model_button('english', user_id)
+        model_button('english', user_id),
+        model_button("gemini-flash-image", user_id)
     ]
 
     buttons_for_admins = [

@@ -9,7 +9,6 @@ from aiogram.exceptions import TelegramBadRequest
 
 from src.models import history_chat as hc, history_chat_stream as hcs, available_models
 from src.tools import convert_gemini_to_markdown as cgtm, lp, help_format
-from src.tti.flux import generate_flux_photo
 from src.stt.whisper import speach_to_text
 from src.filters import ModelCallback, TTSCallback, available_model
 from src.keyboards import keyboard_help, additional_features
@@ -197,13 +196,16 @@ async def clear_history(message: Message):
         update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
         await message.answer("История всех чатов, кроме английского, очищена.")
 
-async def send_text(message: Message, my_question: str | None = None, voice_text: str = ''):
+async def send_text(message: Message, voice_text: str | None = None):
 
-    if my_question:
-        message_text = my_question
+    await bot.send_chat_action(message.chat.id, "typing")
+
+    if voice_text:
+        message_text = voice_text
     else:
         message_text = message.text
 
+    quote = f">{voice_text.capitalize()}\n" if voice_text else ''
     user_model = await available_model(message)
     user_id = message.from_user.id
     disable_notification = False  # For reducing unnecesary notifications
@@ -226,8 +228,9 @@ async def send_text(message: Message, my_question: str | None = None, voice_text
                     reply_markup=additional_features(user_id, text=text)
                     )
             logging.error(e)
+            await message.answer(str(e))
         except Exception as e:
-            logging.error(f"Error sending message: {str(e)}")
+            logging.error(f"Error sending message: {e}")
     async def try_edit_message(message: Message, text: str, parse_mode='MarkdownV2'):
         try:
             await message.edit_text(
@@ -241,11 +244,12 @@ async def send_text(message: Message, my_question: str | None = None, voice_text
             else:
                 logging.error(text)
                 logging.error(e)
+                await message.answer(str(e))
         except Exception as e:
             logging.error(f"Error sending message: {str(e)}")
     if not users.stream(message.from_user.id):
         basemessage = await hc(message, user_model, message_text)
-        text = voice_text + basemessage.content
+        text = quote + basemessage.content
         ctext = cgtm(text)
         logging.debug(text)
         logging.debug(ctext)
@@ -258,7 +262,6 @@ async def send_text(message: Message, my_question: str | None = None, voice_text
                     ctext,
                     disable_notification = disable_notification
                     )
-                #await send_tts_message(message, ctext)
                 disable_notification = True
             else:
                 count = ctext[0:4096].count('```')
@@ -281,7 +284,7 @@ async def send_text(message: Message, my_question: str | None = None, voice_text
                 disable_notification = True
     else:
         text = ""
-        temp_text = ''
+        temp_text = ""
         response = await hcs(message, user_model, message_text)
         for chunk in response:
             if text:
@@ -313,8 +316,8 @@ async def send_text(message: Message, my_question: str | None = None, voice_text
                             disable_notification = disable_notification)
                         disable_notification = True
             else:
-                temp_text += voice_text + chunk.content
-                voice_text = ""
+                temp_text += quote + chunk.content
+                quote = ""
                 if '\n\n' in temp_text:
                     message_1 = await bot_send_message(
                         message.chat.id,
@@ -350,26 +353,21 @@ async def send_text(message: Message, my_question: str | None = None, voice_text
         logging.debug(text or temp_text + '\n' + '=' * 100)
         logging.debug(cgtm(text or temp_text))
 
-async def answer_langchain(message: Message):
-    await bot.send_chat_action(message.chat.id, "typing")
-    await send_text(message)
-
-    user_id = message.from_user.id
     if users.model(user_id) == 'english':
         update_sql_parameter(user_id, "eng_his", users.english(user_id).model_dump_json())
     else:
         update_sql_parameter(user_id, "oth_his", users.other(user_id).model_dump_json())
 
-async def send_flux_photo(message: Message, my_question: str | None = None):
+async def send_photo(message: Message, voice_text: str | None = None):
 
-    if 'flux' != await available_model(message):
+    user_model = users.model(message.from_user.id)
+    if user_model != await available_model(message):
         return
 
-    task = asyncio.create_task(lp(message.chat.id, cycles=36, action='upload_photo'))
+    task = asyncio.create_task(lp(message.chat.id, cycles=26, action='upload_photo'))
 
     try:
-        input_file = await generate_flux_photo(message, my_question)
-        await bot.send_photo(chat_id=message.chat.id, photo=input_file, caption=my_question)
+        await available_models['tti'][user_model](message=message, voice_text=voice_text)
     except Exception as e:
         logging.error(e)
         await bot.send_message(chat_id=message.chat.id, text=f"An error occured: {e}")
@@ -378,25 +376,25 @@ async def send_flux_photo(message: Message, my_question: str | None = None):
 
 async def handle_voice(message: Message):
     try:
+        user_model = users.model(message.from_user.id)
+        if user_model != await available_model(message):
+            return
         user_id = message.from_user.id
 
         await bot.send_chat_action(message.chat.id, "typing" if users.model(user_id) != 'flux' else "upload_photo")
 
-        text_from_voice = await speach_to_text(message, bot)
+        text_from_voice = await speach_to_text(message)
 
         if text_from_voice:
-            if users.model(user_id) != 'flux':
-                await send_text(message, text_from_voice, voice_text=f">{text_from_voice.capitalize()}\n")
-                if users.model(user_id) == 'english':
-                    update_sql_parameter(user_id, 'eng_his', users.english(user_id).model_dump_json())
-                else:
-                    update_sql_parameter(user_id, 'oth_his', users.other(user_id).model_dump_json())
+            if user_model not in available_models['tti']:
+                await send_text(message, text_from_voice)
             else:
-                await send_flux_photo(message, text_from_voice)
+                await send_photo(message, text_from_voice)
         else:
             await message.answer('An error occurred while extracting the text.')
     except Exception as e:
-        await message.answer(f"Error handling voice message: {e}")
+        await message.answer('Error handling voice message.')
+        logging.error(e)
 
 async def send_sticker(message: Message):
     await bot.send_chat_action(message.chat.id, "choose_sticker")
@@ -434,8 +432,8 @@ dp.message.register(answer_help, Command(commands=["help"]))#help
 dp.message.register(change_stream, Command(commands=["stream"]))
 dp.message.register(clear_history, Command(commands=["clear"]))
 dp.message.register(answer_start, CommandStart())#start
-dp.message.register(send_flux_photo, F.text, lambda m: users.model(m.from_user.id) == 'flux' )#flux_answer
-dp.message.register(answer_langchain, F.text)#model_answer
+dp.message.register(send_photo, F.text, lambda m: users.model(m.from_user.id) in available_models['tti'] )
+dp.message.register(send_text, F.text)#model_answer
 dp.message.register(handle_voice, F.voice)
 dp.message.register(send_sticker, lambda m: m.sticker)
 dp.message.register(send_copy)

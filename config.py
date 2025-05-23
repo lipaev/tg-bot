@@ -22,6 +22,7 @@ model_names = {
     'ava_bing': 'Ava Bing',
     "algenib": "Algenib Gemini",
     "charon": "Charon Gemini",
+    "gemini-flash-image": "Gemini 2.0 Flash Image"
 }
 
 cipher = list(getenv('CIPHER'))
@@ -37,7 +38,7 @@ stream_handler.setLevel(logging.INFO)
 
 # Common formatter
 formatter = logging.Formatter(
-    '{asctime}|{levelname:7}|{filename}:{lineno}|{name}|{message}',
+    '{asctime}|{levelname:7}|{filename:13}:{lineno:3}|{name:18}|{message}',
     style='{'
 )
 file_handler.setFormatter(formatter)
@@ -56,6 +57,7 @@ logging.basicConfig(level=logging.DEBUG, handlers=[file_handler, stream_handler]
 @dataclass
 class Config:
     bot: Bot
+    bot_token: str
     admin_ids: list[int]
     google_api_key: str
     hf_api_key: str
@@ -67,6 +69,7 @@ class Config:
 
 config = Config(
     bot=bot,
+    bot_token=getenv('VEAPIL_BOT'),
     admin_ids=[int(getenv('ADMIN_ID'))],
     google_api_key=getenv('GOOGLE_API_KEY'),
     hf_api_key=getenv('HF_API_KEY'),

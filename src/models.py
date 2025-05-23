@@ -7,6 +7,7 @@ from config import config
 from src.ttt.flash import chain_flash_history
 from src.ttt.english import chain_english_history
 #from src.tti.flux import generate_flux_photo
+from src.tti.gemini import send_tti_message
 from src.tts import bing, gemini
 from src.stt.whisper import speach_to_text
 
@@ -20,6 +21,7 @@ available_models = {
     },
     'tti': {
         #'flux': generate_flux_photo,
+        'gemini-flash-image': send_tti_message
     },
     'tts': {
         "algenib": gemini.send_tts_message("Algenib"),
@@ -32,10 +34,10 @@ available_models = {
     }
 }
 
-async def history_chat(message: Message, chain: str, my_question: str | None = None) -> BaseMessage:
+async def history_chat(message: Message, chain: str, message_text: str | None = None) -> BaseMessage:
     """Asyncсhronous chat with history"""
 
-    message_text = my_question or message.text
+    message_text = message_text or message.text
     user_id = message.from_user.id
     lang_group = 'eng' if chain == 'english' else 'oth'
 
@@ -44,21 +46,19 @@ async def history_chat(message: Message, chain: str, my_question: str | None = N
         print(len(config.users.get_user_history(user_id, lang_group).messages))
 
     if message.quote:
-        question = f"«{message.quote.text}»\n{message_text}"
+        message_text = f"«{message.quote.text}»\n{message_text}"
     elif message.reply_to_message:
-        question = f"«{message.reply_to_message.text}»\n{message_text}"
-    else:
-        question = message_text
+        message_text = f"«{message.reply_to_message.text}»\n{message_text}"
 
     return available_models['ttt'][chain].invoke(  # noqa: T201
-    {"lang": decode_language_code(message.from_user.language_code), "question": question},
+    {"lang": decode_language_code(message.from_user.language_code), "question": message_text},
     config={"configurable": {"session_id": {'user_id': user_id, 'lang_group': lang_group}}}
 )
 
-async def history_chat_stream(message: Message, chain: str, my_question: str | None = None) -> Iterator[BaseMessageChunk]:
+async def history_chat_stream(message: Message, chain: str, message_text: str | None = None) -> Iterator[BaseMessageChunk]:
     """Asynchronous chat with history and streaming"""
 
-    message_text = my_question or message.text
+    message_text = message_text or message.text
     user_id = message.from_user.id
     lang_group = 'eng' if chain == 'english' else 'oth'
 
@@ -67,13 +67,11 @@ async def history_chat_stream(message: Message, chain: str, my_question: str | N
         print(len(config.users.get_user_history(user_id, lang_group).messages))
 
     if message.quote:
-        question = f"«{message.quote.text}»\n{message_text}"
+        message_text = f"«{message.quote.text}»\n{message_text}"
     elif message.reply_to_message:
-        question = f"«{message.reply_to_message.text}»\n{message_text}"
-    else:
-        question = message_text
+        message_text = f"«{message.reply_to_message.text}»\n{message_text}"
 
     return available_models['ttt'][chain].stream(
-    {"lang": decode_language_code(message.from_user.language_code), "question": question},
+    {"lang": decode_language_code(message.from_user.language_code), "question": message_text},
     config={"configurable": {"session_id": {'user_id': user_id, 'lang_group': lang_group}}}
 )

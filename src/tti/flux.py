@@ -3,10 +3,10 @@ from aiogram.types import Message, BufferedInputFile
 from config import config
 from huggingface_hub import InferenceClient
 
-async def generate_flux_photo_old(message: Message, my_question: str | None = None) -> BufferedInputFile:
+async def generate_flux_photo_old(message: Message, voice_text: str | None = None) -> BufferedInputFile:
 
-    if my_question:
-        message_text = my_question
+    if voice_text:
+        message_text = voice_text
     else:
         message_text = message.text
 
@@ -18,10 +18,10 @@ async def generate_flux_photo_old(message: Message, my_question: str | None = No
 
     return BufferedInputFile(response, filename='photo.jpg')
 
-async def generate_flux_photo(message: Message, my_question: str | None = None) -> BufferedInputFile:
+async def generate_flux_photo(*, message: Message, voice_text: str | None = None) -> BufferedInputFile:
 
-    if my_question:
-        message_text = my_question
+    if voice_text:
+        message_text = voice_text
     else:
         message_text = message.text
 

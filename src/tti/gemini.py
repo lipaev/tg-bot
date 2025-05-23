@@ -1,26 +1,44 @@
 from google import genai
-import os
-from PIL import Image
-from io import BytesIO
+from google.genai import types
 from dotenv import load_dotenv
+import asyncio
+from ..tools import lp
+from aiogram.types import Message, BufferedInputFile
+from config import config
+from google.genai.errors import ClientError
 load_dotenv()
 
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+async def send_tti_message(*, message: Message, voice_text: str) -> None:
 
-result = client.models.generate_images(
-    model="models/gemini-2.0-flash-preview-image-generation",  #models/imagen-3.0-generate-002
-    prompt="""INSERT_INPUT_HERE""",
-    config=dict(
-        number_of_images=1,
-        output_mime_type="image/jpeg",
-        person_generation="ALLOW_ADULT",
-        aspect_ratio="1:1",
-    ),
-)
+    if voice_text:
+        message_text = voice_text
+    else:
+        message_text = message.text
 
-if len(result.generated_images) != 1:
-    print("Number of images generated does not match the requested number.")
+    bot = config.bot
+    client = genai.Client()
 
-for generated_image in result.generated_images:
-    image = Image.open(BytesIO(generated_image.image.image_bytes))
-    image.show()
+    task = asyncio.create_task(lp(message.chat.id, cycles=16, action='upload_voice'))
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-preview-image-generation",
+            contents=message_text,
+            config=types.GenerateContentConfig(
+            response_modalities=['TEXT', 'IMAGE']
+            )
+        )
+
+        for part in response.candidates[0].content.parts:
+            if part.text is not None:
+                await bot.send_message(message.chat.id, part.text)
+            elif part.inline_data is not None:
+                await bot.send_photo(
+                    message.chat.id,
+                    BufferedInputFile(part.inline_data.data, filename='gemini-native-image.png')
+                )
+    except ClientError as e:
+        await bot.send_message(message.chat.id, e.message, disable_notification=True)
+        config.logging.error(e.details)
+    finally:
+        task.cancel()
