@@ -1,7 +1,7 @@
 import re
 import asyncio
-from aiogram import Bot
 from config import config
+
 
 def convert_gemini_to_html(text: str) -> str:
     """
@@ -55,7 +55,7 @@ def convert_gemini_to_markdown(text: str) -> str:
 
     return text
 
-async def lp(bot: Bot, chat_id: int, cycles: int = 18, action: str = 'typing') -> None:
+async def lp(chat_id: int, cycles: int = 18, action: str = 'typing') -> None:
     """
     Send a typing action to a chat.
 
@@ -63,11 +63,14 @@ async def lp(bot: Bot, chat_id: int, cycles: int = 18, action: str = 'typing') -
         bot: Bot instance.
         chat_id: Id of chat to send the action.
         action: `typing` for text, `upload_photo` for photos, `record_video` or `upload_video` for videos, `record_voice` or `upload_voice` for voice notes, `upload_document` for general files, `choose_sticker` for stickers, `find_location` for location data, `record_video_note` or `upload_video_note` for video. Defaults to 'typing'.
-        cycles: Number of cycles of 5 seconds. Defaults to 15.
+        cycles: Number of cycles of 5 seconds. Defaults to 18.
     """
     for _ in range(cycles):
-        await bot.send_chat_action(chat_id, action)
+        await config.bot.send_chat_action(chat_id, action)
         await asyncio.sleep(5)
+
+def help_format(model: str, stream: bool):
+    return f"""Ваша модель: {config.model_names[model]}\nСтриминг ответов ИИ: {'✅' if stream else '❎'}\n\n*Команды*:\n/stream - {'Отключает режим стриминга ответов ИИ.' if stream else "Включает режим стриминга ответов ИИ."}\n/clear - забыть историю сообщений"""
 
 def decode_language_code(code: str) -> str:
     languages = {
@@ -111,6 +114,15 @@ def decode_language_code(code: str) -> str:
 
     return languages.get(code, code)
 
+template_rag = """
+Системная инструкция:
+Ниже приведены статьи из законодательства Республики Беларусь. Используйте их, чтобы ответить на вопрос.
 
-def help_format(model: str, stream: bool):
-    return f"""Ваша модель: {config.models[model]}\nСтриминг ответов ИИ: {'✅' if stream else '❎'}\n\n*Команды*:\n/stream - {'Отключает режим стриминга ответов ИИ.' if stream else "Включает режим стриминга ответов ИИ."}\n/clear - забыть историю сообщений"""
+Статьи:
+{context}
+
+Вопрос:
+{question}
+
+Ответ:
+"""

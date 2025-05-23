@@ -3,7 +3,7 @@ from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.prompts import ChatPromptTemplate
 
 from rag_solutions.faiss_handler import load_faiss_db, create_faiss_retriever, format_docs_faiss
-from .utils import template_rag
+from ..tools import template_rag
 
 db = load_faiss_db(db_path="./rag_solutions/faiss_db_tkrb", model="sergeyzh/LaBSE-ru-sts", index_name="LaBSE-ru-sts")
 retriever = create_faiss_retriever(db)

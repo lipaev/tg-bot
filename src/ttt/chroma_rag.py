@@ -4,7 +4,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 import chromadb
 from rag_solutions.chromadb_handler import get_or_create_chroma_collection, format_docs_chroma, collection_request
-from .utils import template_rag
+from ..tools import template_rag
 
 
 chroma_client = chromadb.PersistentClient("./rag_solutions/chroma")

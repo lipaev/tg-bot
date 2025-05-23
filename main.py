@@ -1,6 +1,5 @@
 import requests
 import asyncio
-import logging
 import sqlite3
 
 from aiogram import Bot, Dispatcher, F
@@ -8,40 +7,21 @@ from aiogram.filters import Command, CommandStart, ChatMemberUpdatedFilter, KICK
 from aiogram.types import Message, ChatMemberUpdated, BotCommand, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
 
-from src.filters import ModelCallback, available_model
-from src.models import history_chat as hc, history_chat_stream as hcs
-from src.model.flux import generate_flux_photo
-from src.model.whisper import speach_to_text
+from src.models import history_chat as hc, history_chat_stream as hcs, available_models
 from src.tools import convert_gemini_to_markdown as cgtm, lp, help_format
-from src.keyboards import keyboard_help
+from src.tti.flux import generate_flux_photo
+from src.stt.whisper import speach_to_text
+from src.filters import ModelCallback, TTSCallback, available_model
+from src.keyboards import keyboard_help, additional_features
 from config import config
 
 
-bot = Bot(config.tg_bot.token)
 dp = Dispatcher()
-models = config.models
+bot = config.bot
 users = config.users
+model_names = config.model_names
 users.load_from_db('test.db')
-
-# Set up file handler for DEBUG and above
-file_handler = logging.FileHandler('logs.log', 'w', 'utf-8', True)
-file_handler.setLevel(logging.DEBUG)
-
-# Set up stream handler for INFO and above
-stream_handler = logging.StreamHandler()
-stream_handler.setLevel(logging.INFO)
-
-# Common formatter
-formatter = logging.Formatter(
-    '{asctime}|{levelname:7}|{filename}:{lineno}|{name}|{message}',
-    style='{'
-)
-file_handler.setFormatter(formatter)
-stream_handler.setFormatter(formatter)
-
-# Configure root logger
-logging.basicConfig(level=logging.DEBUG, handlers=[file_handler, stream_handler])
-
+logging = config.logging
 
 
 def update_sql_parameter(id: int, parameter: str, value) -> None:
@@ -115,24 +95,25 @@ async def callback_help(query: CallbackQuery):
     user_id = query.message.chat.id
     model = users.model(user_id)
 
-    if query.data == 'clear':
-        await query.answer("История очищена.")
-        if model == 'english':
-            users.clear_english(user_id)
-            update_sql_parameter(user_id, 'eng_his', '{"messages":[]}')
-        else:
-            users.clear_other(user_id)
-            update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
-    else:
-        users.dict[user_id].stream = not users.stream(user_id)
-        stream = users.stream(user_id)
-        update_sql_parameter(user_id, 'stream', stream)
-        await query.message.edit_text(
-            help_format(model, stream),
-            reply_markup=keyboard_help(user_id, stream, model),
-            parse_mode='Markdown')
-
-        await query.answer("Стриминг активирован.")
+    match query.data:
+        case "stream":
+            users.dict[user_id].stream = not users.stream(user_id)
+            stream = users.stream(user_id)
+            update_sql_parameter(user_id, 'stream', stream)
+            await query.message.edit_text(
+                help_format(model, stream),
+                reply_markup=keyboard_help(user_id, stream, model),
+                parse_mode='Markdown')
+            await query.answer("Стриминг активирован.")
+        case "clear":
+            if model == 'english':
+                users.clear_english(user_id)
+                update_sql_parameter(user_id, 'eng_his', '{"messages":[]}')
+                await query.answer("История английского чата очищена.")
+            else:
+                users.clear_other(user_id)
+                update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
+                await query.answer("История прочего чата очищена.")
 
 async def callback_model(query: CallbackQuery, callback_data: ModelCallback):
     user_id = query.message.chat.id
@@ -151,6 +132,21 @@ async def callback_model(query: CallbackQuery, callback_data: ModelCallback):
             parse_mode='Markdown')
 
         await query.answer("Модель обновлена.")
+    else:
+        await query.answer("Error.")
+
+async def callback_tts(query: CallbackQuery, callback_data: TTSCallback):
+
+    user_id = query.from_user.id
+    tts_model = callback_data.tts_model
+    text = query.message.text
+
+    if callback_data.user_id == user_id:
+        tts_model = available_models['tts'].get(tts_model, None)
+        if tts_model:
+            await tts_model(query.message, text)
+        else:
+            await query.answer("Error. Model is not available.")
     else:
         await query.answer("Error.")
 
@@ -201,28 +197,44 @@ async def clear_history(message: Message):
         update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
         await message.answer("История всех чатов, кроме английского, очищена.")
 
-async def send_ai_text(message: Message, my_question: str | None = None, voice_text: str = ''):
+async def send_text(message: Message, my_question: str | None = None, voice_text: str = ''):
 
     if my_question:
         message_text = my_question
     else:
         message_text = message.text
 
-    user_model = await available_model(message, bot)
+    user_model = await available_model(message)
+    user_id = message.from_user.id
+    disable_notification = False  # For reducing unnecesary notifications
 
-    async def bot_send_message(chat_id: int, text: str, parse_mode='MarkdownV2'):
+    async def bot_send_message(chat_id: int, text: str, *, parse_mode='MarkdownV2', disable_notification=False):
         try:
-            return await bot.send_message(chat_id, text, parse_mode=parse_mode)
+            return await bot.send_message(
+                chat_id,
+                text,
+                parse_mode=parse_mode,
+                disable_notification=disable_notification,
+                reply_markup=additional_features(user_id, text=text))
         except TelegramBadRequest as e:
             if "can't parse entities" in str(e):
                 logging.error(text)
-                return await bot.send_message(chat_id, text)
+                return await bot.send_message(
+                    chat_id,
+                    text,
+                    disable_notification=disable_notification,
+                    reply_markup=additional_features(user_id, text=text)
+                    )
             logging.error(e)
         except Exception as e:
             logging.error(f"Error sending message: {str(e)}")
     async def try_edit_message(message: Message, text: str, parse_mode='MarkdownV2'):
         try:
-            await message.edit_text(text, parse_mode=parse_mode)
+            await message.edit_text(
+                text,
+                parse_mode=parse_mode,
+                reply_markup=additional_features(user_id, text=text)
+                )
         except TelegramBadRequest as e:
             if "message is not modified" in str(e):
                 pass
@@ -237,11 +249,17 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
         ctext = cgtm(text)
         logging.debug(text)
         logging.debug(ctext)
-        start = True
-        while start:
+        run = True
+        while run:
             if len(ctext) <= 4096:
-                start = False
-                await bot_send_message(message.chat.id, ctext)
+                run = False
+                message = await bot_send_message(
+                    message.chat.id,
+                    ctext,
+                    disable_notification = disable_notification
+                    )
+                #await send_tts_message(message, ctext)
+                disable_notification = True
             else:
                 count = ctext[0:4096].count('```')
                 code = ctext[0:4096].rfind('```')
@@ -256,7 +274,11 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
                 else:
                     cut = ctext.rfind(' ', 0, 4096)
                 temporary, ctext = ctext[:cut], ctext[cut:]
-                await bot_send_message(message.chat.id, temporary)
+                await bot_send_message(
+                    message.chat.id,
+                    temporary,
+                    disable_notification = disable_notification)
+                disable_notification = True
     else:
         text = ""
         temp_text = ''
@@ -285,12 +307,20 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
                             cut = text.rfind(' ', 0, 4096)
                         temporary, text = text[:cut], text[cut:]
                         await try_edit_message(message_1, cgtm(temporary))
-                        message_1 = await bot_send_message(message.chat.id, cgtm(text))
+                        message_1 = await bot_send_message(
+                            message.chat.id,
+                            cgtm(text),
+                            disable_notification = disable_notification)
+                        disable_notification = True
             else:
                 temp_text += voice_text + chunk.content
                 voice_text = ""
                 if '\n\n' in temp_text:
-                    message_1 = await bot_send_message(message.chat.id, cgtm(temp_text))
+                    message_1 = await bot_send_message(
+                        message.chat.id,
+                        cgtm(temp_text),
+                        disable_notification = disable_notification)
+                    disable_notification = True
                     text += temp_text
                     temp_text = ''  # Clear the buffer after updating
         if temp_text:   # Handle the last chunk
@@ -322,7 +352,7 @@ async def send_ai_text(message: Message, my_question: str | None = None, voice_t
 
 async def answer_langchain(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
-    await send_ai_text(message)
+    await send_text(message)
 
     user_id = message.from_user.id
     if users.model(user_id) == 'english':
@@ -332,11 +362,14 @@ async def answer_langchain(message: Message):
 
 async def send_flux_photo(message: Message, my_question: str | None = None):
 
-    task = asyncio.create_task(lp(bot, message.chat.id, cycles=36, action='upload_photo'))
+    if 'flux' != await available_model(message):
+        return
+
+    task = asyncio.create_task(lp(message.chat.id, cycles=36, action='upload_photo'))
 
     try:
         input_file = await generate_flux_photo(message, my_question)
-        await bot.send_photo(chat_id=message.chat.id, photo=input_file, caption=my_question if my_question else None)
+        await bot.send_photo(chat_id=message.chat.id, photo=input_file, caption=my_question)
     except Exception as e:
         logging.error(e)
         await bot.send_message(chat_id=message.chat.id, text=f"An error occured: {e}")
@@ -353,7 +386,7 @@ async def handle_voice(message: Message):
 
         if text_from_voice:
             if users.model(user_id) != 'flux':
-                await send_ai_text(message, text_from_voice, voice_text=f">{text_from_voice.capitalize()}\n")
+                await send_text(message, text_from_voice, voice_text=f">{text_from_voice.capitalize()}\n")
                 if users.model(user_id) == 'english':
                     update_sql_parameter(user_id, 'eng_his', users.english(user_id).model_dump_json())
                 else:
@@ -394,7 +427,8 @@ async def set_main_menu(bot: Bot):
     await bot.set_my_commands(main_menu_commands)
 
 dp.callback_query.register(callback_help, F.data.in_(['stream', 'clear']))
-dp.callback_query.register(callback_model, ModelCallback.filter(F.model.in_(models)))
+dp.callback_query.register(callback_model, ModelCallback.filter(F.model.in_(available_models['ttt'] | available_models['tti'])))
+dp.callback_query.register(callback_tts, TTSCallback.filter(F.tts_model.in_(available_models['tts'])))
 dp.callback_query.register(callback_pets, F.data.in_(['fox', 'dog', 'cat']))
 dp.message.register(answer_help, Command(commands=["help"]))#help
 dp.message.register(change_stream, Command(commands=["stream"]))
@@ -409,4 +443,4 @@ dp.my_chat_member.register(block, ChatMemberUpdatedFilter(KICKED))
 dp.startup.register(set_main_menu)
 
 if __name__ == "__main__":
-    dp.run_polling(bot)
+    dp.run_polling(bot, close_bot_session=True)

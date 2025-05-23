@@ -1,7 +1,22 @@
-from .model.utils import UserChatHistory
 from dataclasses import dataclass, field
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, FunctionMessage, AIMessageChunk
+from langchain_core.chat_history import BaseChatMessageHistory
+from typing import List, Union
+from pydantic import BaseModel, Field
 import sqlite3
 
+class UserChatHistory(BaseChatMessageHistory, BaseModel):
+    """In memory implementation of chat message history."""
+
+    # Explicitly define the possible concrete message types in a Union
+    messages: List[Union[HumanMessage, AIMessageChunk, AIMessage, SystemMessage, FunctionMessage]] = Field(default_factory=list)
+
+    def add_messages(self, messages: List[BaseMessage]) -> None:
+        """Add a list of messages to the store"""
+        self.messages.extend([type(message)(message.content) for message in messages])
+
+    def clear(self) -> None:
+        self.messages = []
 
 @dataclass
 class User():
