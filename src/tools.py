@@ -114,15 +114,3 @@ def decode_language_code(code: str) -> str:
 
     return languages.get(code, code)
 
-template_rag = """
-Системная инструкция:
-Ниже приведены статьи из законодательства Республики Беларусь. Используйте их, чтобы ответить на вопрос.
-
-Статьи:
-{context}
-
-Вопрос:
-{question}
-
-Ответ:
-"""

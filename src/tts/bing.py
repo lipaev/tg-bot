@@ -1,3 +1,4 @@
+import re
 import asyncio
 import edge_tts
 from ..tools import lp
@@ -48,16 +49,10 @@ async def generate(
 async def send_tts_message(message: Message, text: str, voice_name: str) -> None:
 
     bot = config.bot
-
-    # await bot.send_chat_action(
-    #     message.chat.id,
-    #     action="upload_voice",
-    # )
-
     task = asyncio.create_task(lp(message.chat.id, cycles=16, action='upload_voice'))
 
     try:
-        voice = await generate(text.replace('\\', ''), voice_name=voice_name, save=False)
+        voice = await generate(re.sub(r'[\\👋😊👍✨😂😄🎉]', r'', text, flags=re.DOTALL), voice_name=voice_name, save=False)
         await bot.send_voice(
             message.chat.id,
             BufferedInputFile(voice['voice'], filename=voice['name']),

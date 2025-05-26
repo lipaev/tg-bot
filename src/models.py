@@ -3,21 +3,21 @@ from typing import Iterator
 from aiogram.types import Message
 from config import config
 
-#from .ttt.pro import chain_pro_history
-from src.ttt.flash import chain_flash_history
-from src.ttt.english import chain_english_history
 #from src.tti.flux import generate_flux_photo
 from src.tti.gemini import send_tti_message
 from src.tts import bing, gemini
 from src.stt.whisper import speach_to_text
+from src.ttt.utils import chain, prompt_english
 
 from .tools import decode_language_code
 
+
 available_models = {
     'ttt': {
-        'flash': chain_flash_history,
-        #'pro': chain_pro_history,
-        'english': chain_english_history,
+        'flash': chain(),
+        "flash_2.0": chain('models/gemini-2.0-flash'),
+        'english': chain(prompt=prompt_english, temperature=0.6),
+        #'pro': chain("models/gemini-2.5-pro-exp-03-25", temperature=1),
     },
     'tti': {
         #'flux': generate_flux_photo,

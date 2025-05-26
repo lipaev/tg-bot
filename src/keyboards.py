@@ -31,12 +31,13 @@ def keyboard_help(user_id: int, stream: bool, model: str) -> InlineKeyboardMarku
         InlineKeyboardButton(text='🐶', callback_data='dog'))
 
     buttons_for_anyone = [
-        model_button('flash', user_id),
+        model_button('flash_2.0', user_id),
         model_button('english', user_id),
         model_button("gemini-flash-image", user_id)
     ]
 
     buttons_for_admins = [
+        model_button('flash', user_id),
         model_button('pro', user_id),
         model_button('flux', user_id),
         model_button('rag', user_id)
@@ -45,15 +46,13 @@ def keyboard_help(user_id: int, stream: bool, model: str) -> InlineKeyboardMarku
     builder.row(*[
         button for button in buttons_for_anyone
         if model != button.model and button.model in available_models['ttt'] | available_models['tti']
-    ])
+    ], width=2)
 
     if user_id in config.admin_ids:
         builder.row(*[
             button for button in buttons_for_admins
             if model != button.model and button.model in available_models['ttt'] | available_models['tti']
-        ])
-
-        builder.adjust(3)
+        ], width=2)
 
     stream_text = ['Включить стриминг ответов', 'Отключить стриминг ответов'][stream]
     clear_text = 'Очистить историю английского чата' if model == 'english' else 'Очистить историю прочего чата'

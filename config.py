@@ -13,6 +13,7 @@ bot = Bot(token=getenv('VEAPIL_BOT'))
 
 model_names = {
     'flash': 'Gemini 2.5 Flash',
+    'flash_2.0': 'Gemini 2.0 Flash',
     'english': 'Учитель английского',
     'pro': 'Gemini 2.5 Pro',
     'flux': 'FLUX.1 [dev]',
@@ -38,7 +39,7 @@ stream_handler.setLevel(logging.INFO)
 
 # Common formatter
 formatter = logging.Formatter(
-    '{asctime}|{levelname:7}|{filename:13}:{lineno:3}|{name:18}|{message}',
+    '{asctime}|{levelname:7}|{filename:13}:{lineno:3}|{name:19}|{message}',
     style='{'
 )
 file_handler.setFormatter(formatter)

@@ -4,7 +4,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 import chromadb
 from rag_solutions.chromadb_handler import get_or_create_chroma_collection, format_docs_chroma, collection_request
-from ..tools import template_rag
+from .utils import template_rag
 
 
 chroma_client = chromadb.PersistentClient("./rag_solutions/chroma")
@@ -15,7 +15,4 @@ chain_rag = (
     {"context": RunnableLambda(lambda x: collection_request(chroma_collection, x["question"], 30)) | format_docs_chroma, "question": RunnablePassthrough()}
     | ChatPromptTemplate.from_template(template_rag)
     | ChatGoogleGenerativeAI(model="models/gemini-2.5-pro-exp-03-25", temperature=0.9, top_p=0.8, max_output_tokens=65536)
-    #models/gemini-2.0-flash-001
-    #models/gemini-2.5-pro-exp-03-25
-    #| StrOutputParser()
 )

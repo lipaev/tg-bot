@@ -1,3 +1,4 @@
+import re
 import asyncio
 import mimetypes
 import struct
@@ -30,7 +31,7 @@ async def send_tts_message(message: Message, text: str, voice_name: str) -> None
             types.Content(
                 role="user",
                 parts=[
-                    types.Part.from_text(text=text),
+                    types.Part.from_text(text=re.sub(r'[\\👋😊👍✨😂😄🎉]', r'', text, flags=re.DOTALL)),
                 ],
             ),
         ]

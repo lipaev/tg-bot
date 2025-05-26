@@ -54,13 +54,3 @@ def create_faiss_retriever(db: FAISS, search_type: str = "similarity_score_thres
 
 def format_docs_faiss(docs):
     return "\n\n".join([d.page_content for d in docs])
-
-# The source of the data is trusted, hence setting allow_dangerous_deserialization to True is safe in this context.
-# FAISS setup
-#db = load_faiss_db(
-#    db_path="./rag_solutions/faiss_db_tkrb",
-#    model="models/text-embedding-004",
-#    index_name="codes_LaBSE"
-#)
-#retriever = create_faiss_retriever(db)
-##"context": RunnableLambda(lambda x: retriever.invoke(x["question"])) | format_docs_faiss,
