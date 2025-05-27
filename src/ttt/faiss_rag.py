@@ -16,5 +16,5 @@ retriever = create_faiss_retriever(db)
 chain_rag = (
     {"context": RunnableLambda(lambda x: retriever.invoke(x["question"])) | format_docs_faiss, "question": RunnablePassthrough()}
     | ChatPromptTemplate.from_template(template_rag)
-    | ChatGoogleGenerativeAI(model="models/gemini-2.5-pro-exp-03-25", temperature=0.9, top_p=0.8, max_output_tokens=65536)
+    | ChatGoogleGenerativeAI(model="models/gemini-2.5-flash-preview-05-20", temperature=0.9, top_p=0.8, max_output_tokens=65536)
 )

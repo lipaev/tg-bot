@@ -16,6 +16,7 @@ model_names = {
     'flash_2.0': 'Gemini 2.0 Flash',
     'english': 'Учитель английского',
     'pro': 'Gemini 2.5 Pro',
+    'tools': 'Gemini with tools',
     'flux': 'FLUX.1 [dev]',
     'rag': 'Закон РБ',
     'umbriel_gemini': 'Umbriel Gemini',

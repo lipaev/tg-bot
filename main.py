@@ -7,7 +7,7 @@ from aiogram.filters import Command, CommandStart, ChatMemberUpdatedFilter, KICK
 from aiogram.types import Message, ChatMemberUpdated, BotCommand, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
 
-from src.models import history_chat as hc, history_chat_stream as hcs, available_models
+from src.models import history_chat as hc, available_models
 from src.tools import convert_gemini_to_markdown as cgtm, lp, help_format
 from src.stt.whisper import speach_to_text
 from src.filters import ModelCallback, TTSCallback, available_model
@@ -249,21 +249,19 @@ async def send_text(message: Message, voice_text: str | None = None):
         except Exception as e:
             logging.error(f"Error sending message: {str(e)}")
     if not users.stream(message.from_user.id):
-        basemessage = await hc(message, user_model, message_text)
+        basemessage = await hc(message, user_model, message_text, stream=False)
         text = quote + basemessage.content
         ctext = cgtm(text)
         logging.debug(text)
         logging.debug(ctext)
-        run = True
-        while run:
+        while True:
             if len(ctext) <= 4096:
-                run = False
                 message = await bot_send_message(
                     message.chat.id,
                     ctext,
                     disable_notification = disable_notification
                     )
-                disable_notification = True
+                break
             else:
                 count = ctext[0:4096].count('```')
                 code = ctext[0:4096].rfind('```')
@@ -286,7 +284,7 @@ async def send_text(message: Message, voice_text: str | None = None):
     else:
         text = ""
         temp_text = ""
-        response = await hcs(message, user_model, message_text)
+        response = await hc(message, user_model, message_text)
         for chunk in response:
             if text:
                 temp_text += chunk.content
