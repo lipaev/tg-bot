@@ -346,9 +346,9 @@ async def send_text(message: Message, voice_text: str | None = None):
                         cut = text.rfind(' ', 0, 4096)
                     temporary, text = text[:cut], text[cut:]
                     await try_edit_message(message_1, cgtm(temporary))
-                    await bot_send_message(message.chat.id, cgtm(text))
+                    await bot_send_message(message.chat.id, cgtm(text), disable_notification=disable_notification)
             else:
-                await bot_send_message(message.chat.id, cgtm(temp_text))
+                await bot_send_message(message.chat.id, cgtm(temp_text), disable_notification=disable_notification)
         logging.debug(text or temp_text + '\n' + '=' * 100)
         logging.debug(cgtm(text or temp_text))
 
