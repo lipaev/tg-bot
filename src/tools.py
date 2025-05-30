@@ -69,8 +69,15 @@ async def lp(chat_id: int, cycles: int = 18, action: str = 'typing') -> None:
         await config.bot.send_chat_action(chat_id, action)
         await asyncio.sleep(5)
 
-def help_format(model: str, stream: bool):
-    return f"""Ваша модель: {config.model_names[model]}\nСтриминг ответов ИИ: {'✅' if stream else '❎'}\n\n*Команды*:\n/stream - {'Отключает режим стриминга ответов ИИ.' if stream else "Включает режим стриминга ответов ИИ."}\n/clear - забыть историю сообщений"""
+def generate_settings_text(user_id: int):
+    users = config.users
+    l = ['❎', '✅']
+    text = (
+        f"Ваша модель: {config.model_names[users.model(user_id)]}\n"
+        f"Стриминг ответов ИИ: {l[users.stream(user_id)]}\n"
+        f"Временный чат: {l[users.temp(user_id)]}"
+        )
+    return text
 
 def decode_language_code(code: str) -> str:
     languages = {
@@ -113,4 +120,3 @@ def decode_language_code(code: str) -> str:
     }
 
     return languages.get(code, code)
-

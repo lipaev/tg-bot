@@ -21,10 +21,12 @@ class UserChatHistory(BaseChatMessageHistory, BaseModel):
 @dataclass
 class User():
     stream: int = False
+    temp: int = 0
     model: str = "flash"
     lang: str = "en"
     english: UserChatHistory = field(default_factory=UserChatHistory)
     other: UserChatHistory = field(default_factory=UserChatHistory)
+    temphis: UserChatHistory = field(default_factory=UserChatHistory)
 
 class Users():
     """
@@ -36,6 +38,9 @@ class Users():
 
     def stream(self, user_id: int):
         return self.dict.setdefault(user_id, User()).stream
+
+    def temp(self, user_id: int):
+        return self.dict.setdefault(user_id, User()).temp
 
     def model(self, user_id: int):
         return self.dict.setdefault(user_id, User()).model
@@ -49,32 +54,19 @@ class Users():
     def other(self, user_id: int):
         return self.dict.setdefault(user_id, User()).other
 
+    def temphis(self, user_id: int):
+        return self.dict.setdefault(user_id, User()).temphis
+
     def add_user(self, user_id: int, **kwargs):
         self.dict[user_id] = User(**kwargs)
-
-    def clear_english(self, user_id: int):
-        """
-        Clears english history
-
-        Args:
-            user_id: user identifier whose 'english' history will be deleted
-        """
-        self.dict[user_id].english.clear()
-
-    def clear_other(self, user_id: int):
-        """
-        Clears other history
-
-        Args:
-            user_id: user identifier whose 'other' history will be deleted
-        """
-        self.dict[user_id].other.clear()
 
     def get_user_history(self, user_id: int, lang_group: str) -> UserChatHistory:
         if lang_group == 'eng':
             return self.english(user_id)
         elif lang_group == 'oth':
             return self.other(user_id)
+        elif lang_group == 'temphis':
+            return self.temphis(user_id)
         else:
             raise ValueError(f"Unsupported lang_group: {lang_group}")
 
@@ -90,11 +82,11 @@ class Users():
 
         try:
             cursor = connection.cursor()
-            cursor.execute('SELECT id, stream, model, lang, eng_his, oth_his FROM users')
+            cursor.execute('SELECT id, stream, temp, model, lang, eng_his, oth_his FROM users')
             rows = cursor.fetchall()
 
             for row in rows:
-                user_id, stream, model, lang, eng_his, oth_his = row
+                user_id, stream, temp, model, lang, eng_his, oth_his = row
 
                 english_history = UserChatHistory.model_validate_json(eng_his) if eng_his else UserChatHistory()
                 other_history = UserChatHistory.model_validate_json(oth_his) if oth_his else UserChatHistory()
@@ -102,6 +94,7 @@ class Users():
                 self.add_user(
                     user_id,
                     stream=stream,
+                    temp=temp,
                     model=model,
                     lang=lang,
                     english=english_history,

@@ -8,10 +8,10 @@ from aiogram.types import Message, ChatMemberUpdated, BotCommand, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
 
 from src.models import history_chat as hc, available_models
-from src.tools import convert_gemini_to_markdown as cgtm, lp, help_format
+from src.tools import convert_gemini_to_markdown as cgtm, lp, generate_settings_text
 from src.stt.whisper import speach_to_text
 from src.filters import ModelCallback, TTSCallback, available_model
-from src.keyboards import keyboard_help, additional_features
+from src.keyboards import generate_inline_keyboard, additional_features
 from config import config
 
 
@@ -19,7 +19,7 @@ dp = Dispatcher()
 bot = config.bot
 users = config.users
 model_names = config.model_names
-users.load_from_db('test.db')
+users.load_from_db('test/test.db')
 logging = config.logging
 
 
@@ -36,11 +36,11 @@ def update_sql_parameter(id: int, parameter: str, value) -> None:
         sqlite3.Error: If a database error occurs during the operation.
     """
 
-    allowed_columns = {"stream", "model", "block", "eng_his", "oth_his"}  # Add valid column names here
+    allowed_columns = {"stream", "temp", "model", "block", "eng_his", "oth_his"}  # Add valid column names here
     if parameter not in allowed_columns:
         raise ValueError(f"Invalid column name: {parameter}")
 
-    connection = sqlite3.connect('test.db')
+    connection = sqlite3.connect('test/test.db')
     try:
         cursor = connection.cursor()
         cursor.execute(f'UPDATE users SET {parameter} = ? WHERE id = ?', (value, id))
@@ -56,7 +56,7 @@ async def answer_start(message: Message):
     await message.delete()
 
     user_id = message.from_user.id
-    connection = sqlite3.connect('test.db')
+    connection = sqlite3.connect('test/test.db')
     try:
         cursor = connection.cursor()
         cursor.execute('SELECT id FROM users WHERE id = ?', (user_id, ))
@@ -71,6 +71,8 @@ async def answer_start(message: Message):
         else:
             cursor.execute('UPDATE users SET block = 0 WHERE id = ?;', (user_id, ))
         connection.commit()
+    except Exception as e:
+        logging.error(e)
     finally:
         connection.close()
 
@@ -79,18 +81,18 @@ async def answer_start(message: Message):
         "*Приветствую!*\nЯ - бот с искусственным интеллектом.\nМогу помочь с изучением английского языка. Также могу служить помощником в различных задачах.\nДля дополнительной информации отправь - /help!", parse_mode='Markdown'
     )
 
-async def answer_help(message: Message):
+async def display_user_settings(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
     await message.delete()
     stream = users.stream(message.from_user.id)
     model = users.model(message.from_user.id)
     await message.answer(
-        help_format(model, stream),
-        reply_markup=keyboard_help(message.from_user.id, stream, model),
+        generate_settings_text(message.from_user.id),
+        reply_markup=generate_inline_keyboard(message.from_user.id, stream, model),
         parse_mode='Markdown'
     )
 
-async def callback_help(query: CallbackQuery):
+async def handle_callback_settings(query: CallbackQuery):
     user_id = query.message.chat.id
     model = users.model(user_id)
 
@@ -100,19 +102,33 @@ async def callback_help(query: CallbackQuery):
             stream = users.stream(user_id)
             update_sql_parameter(user_id, 'stream', stream)
             await query.message.edit_text(
-                help_format(model, stream),
-                reply_markup=keyboard_help(user_id, stream, model),
+                generate_settings_text(user_id),
+                reply_markup=generate_inline_keyboard(user_id, stream, model),
                 parse_mode='Markdown')
             await query.answer("Стриминг " + ["деактивирован.", "активирован."][stream])
         case "clear":
-            if model == 'english':
-                users.clear_english(user_id)
-                update_sql_parameter(user_id, 'eng_his', '{"messages":[]}')
-                await query.answer("История английского чата очищена.")
+            if not users.temp(user_id):
+                if model == 'english':
+                    users.english(user_id).clear()
+                    update_sql_parameter(user_id, 'eng_his', '{"messages":[]}')
+                    await query.answer("История английского чата очищена.")
+                else:
+                    users.other(user_id).clear()
+                    update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
+                    await query.answer("История прочего чата очищена.")
             else:
-                users.clear_other(user_id)
-                update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
-                await query.answer("История прочего чата очищена.")
+                users.temphis(user_id).clear()
+                await query.answer("История временного чата очищена.")
+        case "temp":
+            users.dict[user_id].temp = not users.temp(user_id)
+            temp = users.temp(user_id)
+            stream = users.stream(user_id)
+            update_sql_parameter(user_id, 'temp', temp)
+            await query.message.edit_text(
+                generate_settings_text(user_id),
+                reply_markup=generate_inline_keyboard(user_id, stream, model),
+                parse_mode='Markdown')
+            await query.answer("Временный чат " + ["деактивирован.", "активирован."][temp])
 
 async def callback_model(query: CallbackQuery, callback_data: ModelCallback):
     user_id = query.message.chat.id
@@ -126,8 +142,8 @@ async def callback_model(query: CallbackQuery, callback_data: ModelCallback):
         users.dict[user_id].model = model
 
         await query.message.edit_text(
-            help_format(model, stream),
-            reply_markup=keyboard_help(user_id, stream, model),
+            generate_settings_text(user_id),
+            reply_markup=generate_inline_keyboard(user_id, stream, model),
             parse_mode='Markdown')
 
         await query.answer("Модель обновлена.")
@@ -150,6 +166,18 @@ async def callback_tts(query: CallbackQuery, callback_data: TTSCallback):
     else:
         await query.answer("Error.")
 
+async def handle_commands(message: Message):
+    if message.text.startswith(('/settings', '/help')):
+        await display_user_settings(message)
+    elif message.text.startswith('/temp'):
+        await change_temp(message)
+    elif message.text.startswith('/stream'):
+        await change_stream(message)
+    elif message.text.startswith('/clear'):
+        await clear_history(message)
+    elif message.text.startswith('/start'):
+        await answer_start(message)
+
 async def change_stream(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
     await message.delete()
@@ -160,6 +188,17 @@ async def change_stream(message: Message):
     update_sql_parameter(user_id, 'stream', stream)
 
     await message.answer(f"{'Режим стриминга сообщений для ответов ИИ активирован.'if stream else "Режим стриминга сообщений для ответов ИИ деактивирован."}")
+
+async def change_temp(message: Message):
+    await bot.send_chat_action(message.chat.id, "typing")
+    await message.delete()
+
+    user_id = message.from_user.id
+    users.dict[user_id].temp = not users.temp(user_id)
+    temp = users.temp(user_id)
+    update_sql_parameter(user_id, 'temp', temp)
+
+    await message.answer('Временный чат ' + ["деактивирован.", "активирован."][temp])
 
 async def callback_pets(callback: CallbackQuery):
     if callback.data == 'fox':
@@ -188,14 +227,21 @@ async def clear_history(message: Message):
     user_id = message.from_user.id
     model = users.model(user_id)
 
-    if model == 'english':
-        users.clear_english(user_id)
-        update_sql_parameter(user_id, 'eng_his', '{"messages":[]}')
-        await message.answer("История английского чата очищена.")
+    if model in available_models['ttt']:
+        if not users.temp(user_id):
+            if model == 'english':
+                users.english(user_id).clear()
+                update_sql_parameter(user_id, 'eng_his', '{"messages":[]}')
+                await message.answer("История английского чата очищена.")
+            else:
+                users.other(user_id).clear()
+                update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
+                await message.answer("История всех чатов, кроме английского, очищена.")
+        else:
+            users.temphis(user_id).clear()
+            await message.answer("История временного чата очищена.")
     else:
-        users.clear_other(user_id)
-        update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
-        await message.answer("История всех чатов, кроме английского, очищена.")
+        await message.answer(f"Модель {config.model_names[model]} не поддерживает историю чата.")
 
 async def send_text(message: Message, voice_text: str | None = None):
 
@@ -218,7 +264,7 @@ async def send_text(message: Message, voice_text: str | None = None):
                 text,
                 parse_mode=parse_mode,
                 disable_notification=disable_notification,
-                reply_markup=additional_features(user_id, text=text))
+                reply_markup=additional_features(user_id))
         except TelegramBadRequest as e:
             if "can't parse entities" in str(e):
                 logging.error(text)
@@ -226,7 +272,7 @@ async def send_text(message: Message, voice_text: str | None = None):
                     chat_id,
                     text,
                     disable_notification=disable_notification,
-                    reply_markup=additional_features(user_id, text=text)
+                    reply_markup=additional_features(user_id)
                     )
             logging.error(e)
             await message.answer(str(e))
@@ -237,7 +283,7 @@ async def send_text(message: Message, voice_text: str | None = None):
             await message.edit_text(
                 text,
                 parse_mode=parse_mode,
-                reply_markup=additional_features(user_id, text=text)
+                reply_markup=additional_features(user_id)
                 )
         except TelegramBadRequest as e:
             if "message is not modified" in str(e):
@@ -352,10 +398,11 @@ async def send_text(message: Message, voice_text: str | None = None):
         logging.debug(text or temp_text + '\n' + '=' * 100)
         logging.debug(cgtm(text or temp_text))
 
-    if users.model(user_id) == 'english':
-        update_sql_parameter(user_id, "eng_his", users.english(user_id).model_dump_json())
-    else:
-        update_sql_parameter(user_id, "oth_his", users.other(user_id).model_dump_json())
+    if not users.temp(user_id):
+        if users.model(user_id) == 'english':
+            update_sql_parameter(user_id, "eng_his", users.english(user_id).model_dump_json())
+        else:
+            update_sql_parameter(user_id, "oth_his", users.other(user_id).model_dump_json())
 
 async def send_photo(message: Message, voice_text: str | None = None):
 
@@ -413,24 +460,23 @@ async def block(event: ChatMemberUpdated):
 async def set_main_menu(bot: Bot):
 
     main_menu_commands = [
-        BotCommand(command='/help',
-                   description='оказать помощь'),
+        BotCommand(command='/settings',
+                   description='показать настройки'),
+        BotCommand(command='/temp',
+                   description='переключить режим временного чата'),
         BotCommand(command='/stream',
-                   description='генерация ответов ИИ'),
+                   description='переключить режим стриминга ответов ИИ'),
         BotCommand(command='/clear',
-                   description='забыть историю сообщений')
+                   description='очистить историю сообщений')
     ]
 
     await bot.set_my_commands(main_menu_commands)
 
-dp.callback_query.register(callback_help, F.data.in_(['stream', 'clear']))
+dp.callback_query.register(handle_callback_settings, F.data.in_(['stream', 'clear', 'temp']))
 dp.callback_query.register(callback_model, ModelCallback.filter(F.model.in_(available_models['ttt'] | available_models['tti'])))
 dp.callback_query.register(callback_tts, TTSCallback.filter(F.tts_model.in_(available_models['tts'])))
 dp.callback_query.register(callback_pets, F.data.in_(['fox', 'dog', 'cat']))
-dp.message.register(answer_help, Command(commands=["help"]))#help
-dp.message.register(change_stream, Command(commands=["stream"]))
-dp.message.register(clear_history, Command(commands=["clear"]))
-dp.message.register(answer_start, CommandStart())#start
+dp.message.register(handle_commands, Command("settings", "help", "stream", "clear", "start", "temp"))
 dp.message.register(send_photo, F.text, lambda m: users.model(m.from_user.id) in available_models['tti'] )
 dp.message.register(send_text, F.text)#model_answer
 dp.message.register(handle_voice, F.voice)
@@ -440,4 +486,7 @@ dp.my_chat_member.register(block, ChatMemberUpdatedFilter(KICKED))
 dp.startup.register(set_main_menu)
 
 if __name__ == "__main__":
-    dp.run_polling(bot, close_bot_session=True)
+    try:
+        dp.run_polling(bot, close_bot_session=True)
+    except Exception as e:
+        logging.error(e)

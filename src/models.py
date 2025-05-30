@@ -7,7 +7,7 @@ from config import config
 from src.tti.gemini import send_tti_message
 from src.tts import bing, gemini
 from src.stt.whisper import speach_to_text
-from src.ttt.utils import chain, prompt_english
+from src.ttt.utils import google_chain, prompt_english
 #from src.ttt.faiss_rag import chain_rag
 
 from .tools import decode_language_code
@@ -15,9 +15,9 @@ from .tools import decode_language_code
 
 available_models = {
     'ttt': {
-        'flash': chain(),
-        "flash_2.0": chain('models/gemini-2.0-flash'),
-        'english': chain(prompt=prompt_english, temperature=0.6),
+        'flash': google_chain(),
+        "flash_2.0": google_chain('models/gemini-2.0-flash'),
+        'english': google_chain(prompt=prompt_english, temperature=0.6),
         #"rag": chain_rag,
         #'pro': chain("models/gemini-2.5-pro-exp-03-25", temperature=1),
     },
@@ -46,11 +46,19 @@ async def history_chat(
 
     message_text = message_text or message.text
     user_id = message.from_user.id
-    lang_group = 'eng' if chain == 'english' else 'oth'
 
-    if len(config.users.get_user_history(user_id, lang_group).messages) > 44:
+    #Set up a chat where the history will be saved.
+    if config.users.temp(user_id):
+        lang_group = 'temphis'
+    elif chain == 'english':
+        lang_group = 'eng'
+    else:
+        lang_group = 'oth'
+
+    #If more than 80 messages from a user and a bot, then delete 2 oldest messages.
+    if len(config.users.get_user_history(user_id, lang_group).messages) > 80:
         del config.users.get_user_history(user_id, lang_group).messages[:2]
-        print(len(config.users.get_user_history(user_id, lang_group).messages))
+        config.logging.info(f'2 oldest messages from the "{lang_group}" group have been deleted.')
 
     if message.quote:
         message_text = f"«{message.quote.text}»\n{message_text}"

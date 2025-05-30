@@ -5,7 +5,7 @@ from .filters import ModelCallback, TTSCallback
 from .models import available_models
 
 
-def keyboard_help(user_id: int, stream: bool, model: str) -> InlineKeyboardMarkup:
+def generate_inline_keyboard(user_id: int, stream: bool, model: str) -> InlineKeyboardMarkup:
     """
     Returns a keyboard with buttons for streaming and clearing history.
 
@@ -54,17 +54,28 @@ def keyboard_help(user_id: int, stream: bool, model: str) -> InlineKeyboardMarku
             if model != button.model and button.model in available_models['ttt'] | available_models['tti']
         ], width=2)
 
+    if config.users.temp(user_id):
+        temp_chat = 'Отключить временный чат'
+        clear_text = 'Очистить историю временного чата'
+    else:
+        temp_chat = 'Включить временный чат'
+        clear_text = ['Очистить историю прочего чата', 'Очистить историю английского чата'][model == 'english']
     stream_text = ['Включить стриминг ответов', 'Отключить стриминг ответов'][stream]
-    clear_text = 'Очистить историю английского чата' if model == 'english' else 'Очистить историю прочего чата'
 
-    builder.row(
+    buttons = [
+        InlineKeyboardButton(text=temp_chat, callback_data='temp'),
         InlineKeyboardButton(text=stream_text, callback_data='stream'),
-        InlineKeyboardButton(text=clear_text, callback_data='clear'),
-        width=1)
+        InlineKeyboardButton(text=clear_text, callback_data='clear')
+        ]
+
+    builder.row(*[
+            button for button in buttons
+            if not (button.callback_data == 'clear' and model not in available_models['ttt']) #Cheking whether the model supports a clearing history.
+        ], width=1)
 
     return builder.as_markup()
 
-def additional_features(user_id: int, text: str) -> InlineKeyboardMarkup:
+def additional_features(user_id: int) -> InlineKeyboardMarkup:
     """
     Returns a keyboard with buttons that extend an interaction with messages.
 
