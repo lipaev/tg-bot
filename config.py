@@ -4,6 +4,7 @@ from os import getenv
 from dotenv import load_dotenv
 from src.users import Users
 import logging
+from logging.handlers import RotatingFileHandler
 #from random import shuffle
 
 load_dotenv('.env')
@@ -31,7 +32,8 @@ cipher = list(getenv('CIPHER'))
 #shuffle(cipher)
 
 # Set up file handler for DEBUG and above
-file_handler = logging.FileHandler('logs.log', 'w', 'utf-8', True)
+file_handler = RotatingFileHandler('logs.log', 'a', 1024 * 500, 1, 'utf-8', True)
+#file_handler = logging.FileHandler('logs.log', 'w', 'utf-8', True)
 file_handler.setLevel(logging.DEBUG)
 
 # Set up stream handler for INFO and above
