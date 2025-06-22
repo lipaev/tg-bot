@@ -34,7 +34,7 @@ def get_by_session_id(session_id: dict) -> UserChatHistory:
     return config.users.get_user_history(session_id['user_id'], session_id['lang_group'])
 
 def google_chain(
-    model: str = "models/gemini-2.5-flash-preview-05-20",
+    model: str = "models/gemini-2.5-flash",
     prompt: ChatPromptTemplate = prompt,
     temperature: float = 0.9,
     top_p: float| None = None,

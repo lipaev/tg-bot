@@ -3,7 +3,7 @@ import asyncio
 import sqlite3
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import Command, CommandStart, ChatMemberUpdatedFilter, KICKED
+from aiogram.filters import Command, ChatMemberUpdatedFilter, KICKED
 from aiogram.types import Message, ChatMemberUpdated, BotCommand, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
 
@@ -177,6 +177,8 @@ async def handle_commands(message: Message):
         await clear_history(message)
     elif message.text.startswith('/start'):
         await answer_start(message)
+    # elif message.text.startswith('/read_aloud'):
+    #     await
 
 async def change_stream(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
@@ -460,8 +462,8 @@ async def block(event: ChatMemberUpdated):
 async def set_main_menu(bot: Bot):
 
     main_menu_commands = [
-        BotCommand(command='/settings',
-                   description='показать настройки'),
+        BotCommand(command='/help',
+                   description='показать информацию и настройки'),
         BotCommand(command='/temp',
                    description='переключить режим временного чата'),
         BotCommand(command='/stream',
