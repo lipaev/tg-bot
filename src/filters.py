@@ -31,7 +31,7 @@ class TTSCallback(CallbackData, prefix='tts_model', sep=config.cipher):
 
 async def available_model(message: Message) -> str:
     """
-    Checks if the user has access to the model. If he has no access, modifies the user's model. Returns the available model.
+    Checks whether the user has access to the model. If he has no access, modifies the user's model. Returns the available model.
 
     Returns:
         available model

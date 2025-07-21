@@ -9,7 +9,6 @@ from aiogram.exceptions import TelegramBadRequest
 
 from src.models import history_chat as hc, available_models
 from src.tools import convert_gemini_to_markdown as cgtm, lp, generate_settings_text
-from src.stt.whisper import speach_to_text
 from src.filters import ModelCallback, TTSCallback, available_model
 from src.keyboards import generate_inline_keyboard, additional_features
 from config import config
@@ -254,7 +253,7 @@ async def send_text(message: Message, voice_text: str | None = None):
     else:
         message_text = message.text
 
-    quote = f">{voice_text.capitalize()}\n" if voice_text else ''
+    quote = f">{voice_text}\n" if voice_text else ''
     user_model = await available_model(message)
     user_id = message.from_user.id
     disable_notification = False  # For reducing unnecesary notifications
@@ -431,7 +430,7 @@ async def handle_voice(message: Message):
 
         await bot.send_chat_action(message.chat.id, "typing" if users.model(user_id) != 'flux' else "upload_photo")
 
-        text_from_voice = await speach_to_text(message)
+        text_from_voice = await available_models['stt']['faster-whisper'](message.voice.file_id)
 
         if text_from_voice:
             if user_model not in available_models['tti']:
