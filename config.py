@@ -15,6 +15,7 @@ bot = Bot(token=getenv('VEAPIL_BOT'))
 model_names = {
     'flash': 'Gemini 2.5 Flash',
     'flash_2.0': 'Gemini 2.0 Flash',
+    'flash_2.5_lite': 'Gemini 2.5 Flash Lite',
     'english': 'Учитель английского',
     'pro': 'Gemini 2.5 Pro',
     'tools': 'Gemini with tools',
@@ -51,13 +52,6 @@ stream_handler.setFormatter(formatter)
 # Configure root logger
 logging.basicConfig(level=logging.DEBUG, handlers=[file_handler, stream_handler])
 
-# @dataclass
-# class DatabaseConfig:
-#     database: str         # Название базы данных
-#     db_host: str          # URL-адрес базы данных
-#     db_user: str          # Username пользователя базы данных
-#     db_password: str      # Пароль к базе данных
-
 @dataclass
 class Config:
     bot: Bot
@@ -70,6 +64,7 @@ class Config:
     users: Users
     cipher: str
     logging: logging
+    sqlconninfo: str
 
 config = Config(
     bot=bot,
@@ -81,5 +76,6 @@ config = Config(
     model_names=model_names,
     users=Users(),
     cipher=''.join(cipher),
-    logging=logging
+    logging=logging,
+    sqlconninfo=getenv("SQLCONNINFO")
     )
