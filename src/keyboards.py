@@ -18,7 +18,7 @@ def generate_inline_keyboard(user_id: int, stream: bool, model: str) -> InlineKe
 
     def model_button(model: str, user_id: int) -> InlineKeyboardButton:
         return InlineKeyboardButton(
-            text=config.model_names[model],
+            text=config.model_names.get(model, model),
             callback_data=ModelCallback(model=model, user_id=user_id).pack(),
             model=model
             )
@@ -32,6 +32,7 @@ def generate_inline_keyboard(user_id: int, stream: bool, model: str) -> InlineKe
 
     buttons_for_anyone = [
         model_button('flash_2.0', user_id),
+        model_button('flash_2.5_lite', user_id),
         model_button('english', user_id),
         model_button("gemini-flash-image", user_id)
     ]
