@@ -1,6 +1,8 @@
 import requests
 import asyncio
-import sqlite3
+import psycopg
+from psycopg.sql import SQL, Identifier
+from typing import Any
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, ChatMemberUpdatedFilter, KICKED
@@ -18,11 +20,26 @@ dp = Dispatcher()
 bot = config.bot
 users = config.users
 model_names = config.model_names
-users.load_from_db('test/test.db')
+users.load_from_db()
 logging = config.logging
 
+async def get_user_data(user_id: int, columns: list[str] | str) -> tuple | Any | None:
+    if isinstance(columns, str):
+        columns = [columns]
+    with psycopg.connect(config.sqlconninfo) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                SQL('SELECT {columns} FROM users WHERE id = %s').format(
+                    columns=SQL(',').join([Identifier(column) for column in columns])
+                    ),
+                (user_id,)
+            )
+            result = cur.fetchone()
+            if len(result) == 1:
+                return result[0]
+            return result
 
-def update_sql_parameter(id: int, parameter: str, value) -> None:
+async def update_user_data(id: int, parameter: str, value) -> None:
     """
     Updates a specific parameter for a user in the database.
     Args:
@@ -35,54 +52,42 @@ def update_sql_parameter(id: int, parameter: str, value) -> None:
         sqlite3.Error: If a database error occurs during the operation.
     """
 
-    allowed_columns = {"stream", "temp", "model", "block", "eng_his", "oth_his"}  # Add valid column names here
+    allowed_columns = {"stream", "temp", "model", "block", "eng_his", "oth_his"}
     if parameter not in allowed_columns:
         raise ValueError(f"Invalid column name: {parameter}")
 
-    connection = sqlite3.connect('test/test.db')
-    try:
-        cursor = connection.cursor()
-        cursor.execute(f'UPDATE users SET {parameter} = ? WHERE id = ?', (value, id))
-        connection.commit()
-    except sqlite3.Error as e:
-        logging.error(f"Database error: {e}")
-        raise
-    finally:
-        connection.close()
+    with psycopg.connect(config.sqlconninfo, autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(SQL('UPDATE users SET {} = %s WHERE id = %s').format(Identifier(parameter)), (value, id))
 
 async def answer_start(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
-    await message.delete()
 
     user_id = message.from_user.id
-    connection = sqlite3.connect('test/test.db')
-    try:
-        cursor = connection.cursor()
-        cursor.execute('SELECT id FROM users WHERE id = ?', (user_id, ))
-        if not cursor.fetchone():
-            cursor.execute("""INSERT INTO users (id, first_name, lang)
-                            VALUES (?, ?, ?)""",
+    with psycopg.connect(config.sqlconninfo, autocommit=True) as aconn:
+        with aconn.cursor() as cur:
+            cur.execute('SELECT id FROM users WHERE id = %s', (user_id, ))
+            if not cur.fetchone():
+                cur.execute(
+                    "INSERT INTO users (id, first_name, lang) VALUES (%s, %s, %s)",
                     (user_id,
                     message.from_user.first_name,
                     message.from_user.language_code)
                     )
-            users.add_user(user_id, lang=message.from_user.language_code)
-        else:
-            cursor.execute('UPDATE users SET block = 0 WHERE id = ?;', (user_id, ))
-        connection.commit()
-    except Exception as e:
-        logging.error(e)
-    finally:
-        connection.close()
+                users.add_user(user_id, lang=message.from_user.language_code)
+            else:
+                cur.execute('UPDATE users SET block = false WHERE id = %s;', (user_id, ))
 
     logging.info(f"{user_id}, {message.from_user.first_name}, {message.from_user.language_code}")
     await message.answer(
-        "*Приветствую!*\nЯ - бот с искусственным интеллектом.\nМогу помочь с изучением английского языка. Также могу служить помощником в различных задачах.\nДля дополнительной информации отправь - /help!", parse_mode='Markdown'
+        "*Приветствую!*\nЯ - бот с искусственным интеллектом.\nМогу помочь с изучением английского языка."
+        " Также могу служить помощником в различных задачах.\nДля дополнительной информации отправь - /help!",
+        parse_mode='Markdown'
     )
 
 async def display_user_settings(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
-    await message.delete()
+
     stream = users.stream(message.from_user.id)
     model = users.model(message.from_user.id)
     await message.answer(
@@ -99,7 +104,7 @@ async def handle_callback_settings(query: CallbackQuery):
         case "stream":
             users.dict[user_id].stream = not users.stream(user_id)
             stream = users.stream(user_id)
-            update_sql_parameter(user_id, 'stream', stream)
+            await update_user_data(user_id, 'stream', stream)
             await query.message.edit_text(
                 generate_settings_text(user_id),
                 reply_markup=generate_inline_keyboard(user_id, stream, model),
@@ -109,11 +114,11 @@ async def handle_callback_settings(query: CallbackQuery):
             if not users.temp(user_id):
                 if model == 'english':
                     users.english(user_id).clear()
-                    update_sql_parameter(user_id, 'eng_his', '{"messages":[]}')
+                    await update_user_data(user_id, 'eng_his', '{"messages":[]}')
                     await query.answer("История английского чата очищена.")
                 else:
                     users.other(user_id).clear()
-                    update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
+                    await update_user_data(user_id, 'oth_his', '{"messages":[]}')
                     await query.answer("История прочего чата очищена.")
             else:
                 users.temphis(user_id).clear()
@@ -122,7 +127,7 @@ async def handle_callback_settings(query: CallbackQuery):
             users.dict[user_id].temp = not users.temp(user_id)
             temp = users.temp(user_id)
             stream = users.stream(user_id)
-            update_sql_parameter(user_id, 'temp', temp)
+            await update_user_data(user_id, 'temp', temp)
             await query.message.edit_text(
                 generate_settings_text(user_id),
                 reply_markup=generate_inline_keyboard(user_id, stream, model),
@@ -137,7 +142,7 @@ async def callback_model(query: CallbackQuery, callback_data: ModelCallback):
         stream = users.stream(user_id)
         model = callback_data.model
 
-        update_sql_parameter(user_id, 'model', model)
+        await update_user_data(user_id, 'model', model)
         users.dict[user_id].model = model
 
         await query.message.edit_text(
@@ -186,7 +191,7 @@ async def change_stream(message: Message):
     user_id = message.from_user.id
     users.dict[user_id].stream = not users.stream(user_id)
     stream = users.stream(user_id)
-    update_sql_parameter(user_id, 'stream', stream)
+    await update_user_data(user_id, 'stream', stream)
 
     await message.answer(f"{'Режим стриминга сообщений для ответов ИИ активирован.'if stream else "Режим стриминга сообщений для ответов ИИ деактивирован."}")
 
@@ -197,7 +202,7 @@ async def change_temp(message: Message):
     user_id = message.from_user.id
     users.dict[user_id].temp = not users.temp(user_id)
     temp = users.temp(user_id)
-    update_sql_parameter(user_id, 'temp', temp)
+    await update_user_data(user_id, 'temp', temp)
 
     await message.answer('Временный чат ' + ["деактивирован.", "активирован."][temp])
 
@@ -232,11 +237,11 @@ async def clear_history(message: Message):
         if not users.temp(user_id):
             if model == 'english':
                 users.english(user_id).clear()
-                update_sql_parameter(user_id, 'eng_his', '{"messages":[]}')
+                await update_user_data(user_id, 'eng_his', '{"messages":[]}')
                 await message.answer("История английского чата очищена.")
             else:
                 users.other(user_id).clear()
-                update_sql_parameter(user_id, 'oth_his', '{"messages":[]}')
+                await update_user_data(user_id, 'oth_his', '{"messages":[]}')
                 await message.answer("История всех чатов, кроме английского, очищена.")
         else:
             users.temphis(user_id).clear()
@@ -401,9 +406,9 @@ async def send_text(message: Message, voice_text: str | None = None):
 
     if not users.temp(user_id):
         if users.model(user_id) == 'english':
-            update_sql_parameter(user_id, "eng_his", users.english(user_id).model_dump_json())
+            await update_user_data(user_id, "eng_his", users.english(user_id).model_dump_json())
         else:
-            update_sql_parameter(user_id, "oth_his", users.other(user_id).model_dump_json())
+            await update_user_data(user_id, "oth_his", users.other(user_id).model_dump_json())
 
 async def send_photo(message: Message, voice_text: str | None = None):
 
@@ -455,14 +460,13 @@ async def send_copy(message: Message):
         await message.reply("Извините, но сообщение не распознано.")
 
 async def block(event: ChatMemberUpdated):
-    update_sql_parameter(event.from_user.id, 'block', 1)
+    await update_user_data(event.from_user.id, 'block', 1)
     print(event.from_user.id, event.from_user.first_name, "blocked the bot")
 
 async def set_main_menu(bot: Bot):
-
     main_menu_commands = [
         BotCommand(command='/help',
-                   description='показать информацию и настройки'),
+                   description='показать  настройки'),
         BotCommand(command='/temp',
                    description='переключить режим временного чата'),
         BotCommand(command='/stream',
@@ -470,7 +474,6 @@ async def set_main_menu(bot: Bot):
         BotCommand(command='/clear',
                    description='очистить историю сообщений')
     ]
-
     await bot.set_my_commands(main_menu_commands)
 
 dp.callback_query.register(handle_callback_settings, F.data.in_(['stream', 'clear', 'temp']))

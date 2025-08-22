@@ -3,7 +3,10 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, System
 from langchain_core.chat_history import BaseChatMessageHistory
 from typing import List, Union
 from pydantic import BaseModel, Field
-import sqlite3
+import psycopg
+from os import getenv
+from dotenv import load_dotenv
+load_dotenv('.env')
 
 class UserChatHistory(BaseChatMessageHistory, BaseModel):
     """In memory implementation of chat message history."""
@@ -20,8 +23,8 @@ class UserChatHistory(BaseChatMessageHistory, BaseModel):
 
 @dataclass
 class User():
-    stream: int = False
-    temp: int = 0
+    stream: bool = False
+    temp: bool = False
     model: str = "flash"
     lang: str = "en"
     english: UserChatHistory = field(default_factory=UserChatHistory)
@@ -70,37 +73,28 @@ class Users():
         else:
             raise ValueError(f"Unsupported lang_group: {lang_group}")
 
-    def load_from_db(self, db_path: str):
+    def load_from_db(self):
         """
         Loads users from the SQL table.
-
-        Args:
-            db_path: path to data base.
         """
 
-        connection = sqlite3.connect(db_path)
+        with psycopg.connect(getenv("SQLCONNINFO")) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('SELECT id, stream, temp, model, lang, eng_his, oth_his FROM users')
+                rows = cursor.fetchall()
 
-        try:
-            cursor = connection.cursor()
-            cursor.execute('SELECT id, stream, temp, model, lang, eng_his, oth_his FROM users')
-            rows = cursor.fetchall()
+                for row in rows:
+                    user_id, stream, temp, model, lang, eng_his, oth_his = row
 
-            for row in rows:
-                user_id, stream, temp, model, lang, eng_his, oth_his = row
+                    english_history = UserChatHistory.model_validate(eng_his) if eng_his else UserChatHistory()
+                    other_history = UserChatHistory.model_validate(oth_his) if oth_his else UserChatHistory()
 
-                english_history = UserChatHistory.model_validate_json(eng_his) if eng_his else UserChatHistory()
-                other_history = UserChatHistory.model_validate_json(oth_his) if oth_his else UserChatHistory()
-
-                self.add_user(
-                    user_id,
-                    stream=stream,
-                    temp=temp,
-                    model=model,
-                    lang=lang,
-                    english=english_history,
-                    other=other_history
-                )
-        except sqlite3.Error as e:
-            print(f"Database error: {e}")
-        finally:
-            connection.close()
+                    self.add_user(
+                        user_id,
+                        stream=stream,
+                        temp=temp,
+                        model=model,
+                        lang=lang,
+                        english=english_history,
+                        other=other_history
+                    )

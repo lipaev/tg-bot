@@ -13,27 +13,27 @@ bot = Bot(token=getenv('VEAPIL_BOT'))
 
 
 model_names = {
-    'flash': 'Gemini 2.5 Flash',
-    'flash_2.0': 'Gemini 2.0 Flash',
-    'flash_2.5_lite': 'Gemini 2.5 Flash Lite',
-    'english': 'Учитель английского',
-    'pro': 'Gemini 2.5 Pro',
+    'flash': 'Gemini 2.5 Flash📝',
+    'flash_2.0': 'Gemini 2.0 Flash📝',
+    'flash_2.5_lite': 'Gemini 2.5 Flash Lite📝',
+    'english': 'Учитель английского📝',
+    'pro': 'Gemini 2.5 Pro📝',
     'tools': 'Gemini with tools',
-    'flux': 'FLUX.1 [dev]',
+    'flux': 'FLUX.1 [dev]📸',
     'rag': 'Закон РБ',
     'umbriel_gemini': 'Umbriel Gemini',
     'andrew_bing': 'Andrew Bing',
     'ava_bing': 'Ava Bing',
     "algenib": "Algenib Gemini",
     "charon": "Charon Gemini",
-    "gemini-flash-image": "Gemini 2.0 Flash Image"
+    "gemini-flash-image": "Gemini 2.0 Flash Image📸"
 }
 
 cipher = list(getenv('CIPHER'))
 #shuffle(cipher)
 
 # Set up file handler for DEBUG and above
-file_handler = RotatingFileHandler('logs.log', 'a', 1024 * 500, 1, 'utf-8', True)
+file_handler = RotatingFileHandler('logs/logs.log', 'a', 1024 * 500, 1, 'utf-8', True)
 #file_handler = logging.FileHandler('logs.log', 'w', 'utf-8', True)
 file_handler.setLevel(logging.DEBUG)
 
