@@ -34,7 +34,7 @@ async def generate(
     communicate = edge_tts.Communicate(
         text,
         voice_name,
-        volume = "+10%"
+        volume = "+5%"
         )
     audio = b""
     async for i in communicate.stream():
@@ -52,12 +52,16 @@ async def send_tts_message(message: Message, text: str, voice_name: str) -> None
     task = asyncio.create_task(lp(message.chat.id, cycles=16, action='upload_voice'))
 
     try:
-        voice = await generate(re.sub(r'[\\👋😊👍✨😂😄🎉]', r'', text, flags=re.DOTALL), voice_name=voice_name, save=False)
+        voice = await generate(
+            re.sub(r'[\\👋😊👍✨😂😄🎉]', r'', text, flags=re.DOTALL),
+            voice_name=voice_name,
+            save=False
+        )
         await bot.send_voice(
             message.chat.id,
             BufferedInputFile(voice['voice'], filename=voice['name']),
             reply_to_message_id=message.message_id,
-            disable_notification=True
+            disable_notification=False
         )
     finally:
         task.cancel()

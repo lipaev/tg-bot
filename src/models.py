@@ -18,9 +18,9 @@ available_models = {
         "flash": google_chain(),
         "flash_2.0": google_chain("models/gemini-2.0-flash"),
         "flash_2.5_lite": google_chain("models/gemini-2.5-flash-lite"),
-        "english": google_chain(prompt=prompt_english, temperature=0.6),
+        "english": google_chain(model="models/gemini-2.5-flash", prompt=prompt_english, temperature=0.6),
         # "rag": chain_rag,
-        #'pro': chain("models/gemini-2.5-pro-exp-03-25", temperature=1),
+        'pro': google_chain("models/gemini-2.5-pro", temperature=0.7),
     },
     "tti": {
         #'flux': generate_flux_photo,

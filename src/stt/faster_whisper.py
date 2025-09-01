@@ -16,7 +16,7 @@ async def speach_to_text(voice_file_id: str) -> str | None:
 
     segments, info = model.transcribe(
         io.BytesIO(requests.get(file_url).content),
-        beam_size=10,
+        beam_size=6,
         multilingual=False,
         language="en",
         without_timestamps=True,

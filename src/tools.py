@@ -1,7 +1,11 @@
 import re
 import asyncio
 from config import config
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import Message
 
+logging = config.logging
+bot = config.bot
 
 def convert_gemini_to_html(text: str) -> str:
     """
@@ -120,3 +124,85 @@ def decode_language_code(code: str) -> str:
     }
 
     return languages.get(code, code)
+
+async def bot_send_message(
+    message: Message,
+    text: str,
+    reply_markup_func: callable = None,
+    parse_mode: str = 'MarkdownV2',
+    disable_notification: bool = False,
+    *,
+    user_id: int | None = None,
+    ):
+    """
+    Sends a message to a chat.
+
+    Args:
+        message: _description_
+        text: _description_
+        reply_markup_func: _description_. Defaults to None.
+        parse_mode: _description_. Defaults to 'MarkdownV2'.
+        disable_notification: . Defaults to False.
+        user_id: ID из message не соответствует ID пользователя поэтому передаем его явно. Defaults to None.
+
+    Returns:
+        _description_
+    """
+    try:
+        return await bot.send_message(
+            message.chat.id,
+            text,
+            parse_mode=parse_mode,
+            disable_notification=disable_notification,
+            reply_markup=reply_markup_func(user_id) if reply_markup_func else None
+        )
+    except TelegramBadRequest as e:
+        if "can't parse entities" in str(e):
+            logging.error("This message can't be parsed:\n" + text)
+            return await bot.send_message(
+                message.chat.id,
+                text,
+                disable_notification=disable_notification,
+                reply_markup=reply_markup_func(user_id) if reply_markup_func else None
+                )
+        logging.error(e)
+        await bot.send_message(chat_id=message.chat.id, text=str(e))
+    except Exception as e:
+        logging.error(f"Error sending message: {e}")
+
+async def try_edit_message(
+    message: Message,
+    text: str,
+    reply_markup_func: callable = None,
+    parse_mode: str = 'MarkdownV2',
+    *,
+    user_id: int | None = None,
+    ):
+    """
+    Edits a message with new text and optional reply markup.
+
+    Args:
+        message: The message to edit.
+        text: The new text to set for the message.
+        reply_markup_func: A function that generates the reply markup. Defaults to None.
+        parse_mode: The parse mode to use for the message. Defaults to 'MarkdownV2'.
+        user_id: ID из message не соответствует ID пользователя поэтому передаем его явно. Defaults to None.
+
+    Returns:
+        None
+    """
+    try:
+        await message.edit_text(
+            text,
+            parse_mode=parse_mode,
+            reply_markup=reply_markup_func(user_id) if reply_markup_func else None
+            )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            logging.error(text)
+            logging.error(e)
+            await message.answer(str(e))
+    except Exception as e:
+        logging.error(f"Error sending message: {str(e)}")

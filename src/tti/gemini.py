@@ -22,7 +22,7 @@ async def send_tti_message(*, message: Message, voice_text: str) -> None:
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash-preview-image-generation",
+            model="models/gemini-2.5-flash-image-preview",
             contents=message_text,
             config=types.GenerateContentConfig(
             response_modalities=['TEXT', 'IMAGE']

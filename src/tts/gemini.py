@@ -31,7 +31,7 @@ async def send_tts_message(message: Message, text: str, voice_name: str) -> None
             types.Content(
                 role="user",
                 parts=[
-                    types.Part.from_text(text=re.sub(r'[\\👋😊👍✨😂😄🎉]', r'', text, flags=re.DOTALL)),
+                    types.Part.from_text(text="Pronounce like you are a professional voice actor with 1.2 speed: " + re.sub(r'[\\👋😊👍✨😂😄🎉]', r'', text, flags=re.DOTALL)),
                 ],
             ),
         ]
@@ -76,9 +76,9 @@ async def send_tts_message(message: Message, text: str, voice_name: str) -> None
         message.chat.id,
         BufferedInputFile(data_buffer, filename='voice.wav'),
         reply_to_message_id=message.message_id,
-        disable_notification=True)
+        disable_notification=False)
     except ClientError as e:
-        await bot.send_message(message.chat.id, e.message, disable_notification=True)
+        await bot.send_message(message.chat.id, e.message, disable_notification=False)
         config.logging.error(e.details)
     finally:
         task.cancel()

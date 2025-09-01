@@ -7,10 +7,15 @@ from typing import Any
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, ChatMemberUpdatedFilter, KICKED
 from aiogram.types import Message, ChatMemberUpdated, BotCommand, CallbackQuery
-from aiogram.exceptions import TelegramBadRequest
 
 from src.models import history_chat as hc, available_models
-from src.tools import convert_gemini_to_markdown as cgtm, lp, generate_settings_text
+from src.tools import (
+    convert_gemini_to_markdown as cgtm,
+    lp,
+    generate_settings_text,
+    bot_send_message,
+    try_edit_message
+)
 from src.filters import ModelCallback, TTSCallback, available_model
 from src.keyboards import generate_inline_keyboard, additional_features
 from config import config
@@ -249,103 +254,114 @@ async def clear_history(message: Message):
     else:
         await message.answer(f"Модель {config.model_names[model]} не поддерживает историю чата.")
 
-async def send_text(message: Message, voice_text: str | None = None):
+async def send_text(message: Message, voice_message: Message | None = None):
 
     await bot.send_chat_action(message.chat.id, "typing")
 
-    if voice_text:
-        message_text = voice_text
+    if voice_message:
+        message_text = voice_message.text
     else:
         message_text = message.text
 
-    quote = f">{voice_text}\n" if voice_text else ''
+    #quote = f">{voice_message}\n" if voice_message else ''
     user_model = await available_model(message)
     user_id = message.from_user.id
     disable_notification = False  # For reducing unnecesary notifications
 
-    async def bot_send_message(chat_id: int, text: str, *, parse_mode='MarkdownV2', disable_notification=False):
-        try:
-            return await bot.send_message(
-                chat_id,
-                text,
-                parse_mode=parse_mode,
-                disable_notification=disable_notification,
-                reply_markup=additional_features(user_id))
-        except TelegramBadRequest as e:
-            if "can't parse entities" in str(e):
-                logging.error(text)
-                return await bot.send_message(
-                    chat_id,
-                    text,
-                    disable_notification=disable_notification,
-                    reply_markup=additional_features(user_id)
-                    )
-            logging.error(e)
-            await message.answer(str(e))
-        except Exception as e:
-            logging.error(f"Error sending message: {e}")
-    async def try_edit_message(message: Message, text: str, parse_mode='MarkdownV2'):
-        try:
-            await message.edit_text(
-                text,
-                parse_mode=parse_mode,
-                reply_markup=additional_features(user_id)
-                )
-        except TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                pass
-            else:
-                logging.error(text)
-                logging.error(e)
-                await message.answer(str(e))
-        except Exception as e:
-            logging.error(f"Error sending message: {str(e)}")
-    if not users.stream(message.from_user.id):
-        basemessage = await hc(message, user_model, message_text, stream=False)
-        text = quote + basemessage.content
-        ctext = cgtm(text)
-        logging.debug(text)
-        logging.debug(ctext)
-        while True:
-            if len(ctext) <= 4096:
-                message = await bot_send_message(
-                    message.chat.id,
-                    ctext,
-                    disable_notification = disable_notification
-                    )
-                break
-            else:
-                count = ctext[0:4096].count('```')
-                code = ctext[0:4096].rfind('```')
-                cut = ctext[0:4096].rfind('\n\n')
-                if count % 2 == 0 and count > 0:
-                    if code > cut:
-                        cut = code + 3
-                elif count > 0:
-                    cut = code
-                elif cut == -1:
-                    cut = ctext.rfind('\n', 0, 4096)
+    try:
+        if not users.stream(message.from_user.id):
+            basemessage = await hc(message, user_model, message_text, stream=False)
+            text = basemessage.content
+            ctext = cgtm(text)
+            logging.debug(text)
+            logging.debug(ctext)
+            while True:
+                if len(ctext) <= 4096:
+                    message = await bot_send_message(
+                        message,
+                        ctext,
+                        disable_notification=disable_notification,
+                        reply_markup_func=additional_features,
+                        user_id=user_id
+                        )
+                    break
                 else:
-                    cut = ctext.rfind(' ', 0, 4096)
-                temporary, ctext = ctext[:cut], ctext[cut:]
-                await bot_send_message(
-                    message.chat.id,
-                    temporary,
-                    disable_notification = disable_notification)
-                disable_notification = True
-    else:
-        text = ""
-        temp_text = ""
-        response = await hc(message, user_model, message_text)
-        for chunk in response:
-            if text:
-                temp_text += chunk.content
-                if '\n\n' in temp_text:
+                    count = ctext[0:4096].count('```')
+                    code = ctext[0:4096].rfind('```')
+                    cut = ctext[0:4096].rfind('\n\n')
+                    if count % 2 == 0 and count > 0:
+                        if code > cut:
+                            cut = code + 3
+                    elif count > 0:
+                        cut = code
+                    elif cut == -1:
+                        cut = ctext.rfind('\n', 0, 4096)
+                    else:
+                        cut = ctext.rfind(' ', 0, 4096)
+                    temporary, ctext = ctext[:cut], ctext[cut:]
+                    await bot_send_message(
+                        message,
+                        temporary,
+                        disable_notification=disable_notification,
+                        user_id=user_id
+                    )
+                    disable_notification = True
+        else:
+            text = ""
+            temp_text = ""
+            response = await hc(message, user_model, message_text)
+            for chunk in response:
+                if text:
+                    temp_text += chunk.content
+                    if '\n\n' in temp_text:
+                        text += temp_text
+                        ctext = cgtm(text)
+                        temp_text = ''
+                        if len(ctext) <= 4096:
+                            await try_edit_message(message_1, ctext, additional_features, user_id=user_id)
+                        else:
+                            count = text[0:4096].count('```')
+                            code = text[0:4096].rfind('```')
+                            cut = text[0:4096].rfind('\n\n')
+                            if count % 2 == 0 and count > 0:
+                                if code > cut:
+                                    cut = code + 3
+                            elif count > 0:
+                                cut = code
+                            elif cut == -1:
+                                cut = text.rfind('\n', 0, 4096)
+                            else:
+                                cut = text.rfind(' ', 0, 4096)
+                            temporary, text = text[:cut], text[cut:]
+                            await try_edit_message(message_1, cgtm(temporary), additional_features, user_id=user_id)
+                            message_1 = await bot_send_message(
+                                message,
+                                cgtm(text),
+                                reply_markup_func=additional_features,
+                                disable_notification=disable_notification,
+                                user_id=user_id
+                            )
+                            disable_notification = True
+                else:
+                    temp_text += chunk.content
+                    # quote = ""
+                    if '\n\n' in temp_text:
+                        message_1 = await bot_send_message(
+                            message,
+                            cgtm(temp_text),
+                            reply_markup_func=additional_features,
+                            disable_notification=disable_notification,
+                            user_id=user_id
+                        )
+                        disable_notification = True
+                        text += temp_text
+                        temp_text = ''  # Clear the buffer after updating
+            if temp_text:   # Handle the last chunk
+                if text:
                     text += temp_text
                     ctext = cgtm(text)
-                    temp_text = ''
                     if len(ctext) <= 4096:
-                        await try_edit_message(message_1, ctext)
+                        await try_edit_message(message_1, ctext, additional_features, user_id=user_id)
                     else:
                         count = text[0:4096].count('```')
                         code = text[0:4096].rfind('```')
@@ -360,49 +376,30 @@ async def send_text(message: Message, voice_text: str | None = None):
                         else:
                             cut = text.rfind(' ', 0, 4096)
                         temporary, text = text[:cut], text[cut:]
-                        await try_edit_message(message_1, cgtm(temporary))
-                        message_1 = await bot_send_message(
-                            message.chat.id,
+                        await try_edit_message(message_1, cgtm(temporary), additional_features, user_id=user_id)
+                        await bot_send_message(
+                            message,
                             cgtm(text),
-                            disable_notification = disable_notification)
-                        disable_notification = True
-            else:
-                temp_text += quote + chunk.content
-                quote = ""
-                if '\n\n' in temp_text:
-                    message_1 = await bot_send_message(
-                        message.chat.id,
-                        cgtm(temp_text),
-                        disable_notification = disable_notification)
-                    disable_notification = True
-                    text += temp_text
-                    temp_text = ''  # Clear the buffer after updating
-        if temp_text:   # Handle the last chunk
-            if text:
-                text += temp_text
-                ctext = cgtm(text)
-                if len(ctext) <= 4096:
-                    await try_edit_message(message_1, ctext)
+                            reply_markup_func=additional_features,
+                            disable_notification=disable_notification,
+                            user_id=user_id
+                        )
                 else:
-                    count = text[0:4096].count('```')
-                    code = text[0:4096].rfind('```')
-                    cut = text[0:4096].rfind('\n\n')
-                    if count % 2 == 0 and count > 0:
-                        if code > cut:
-                            cut = code + 3
-                    elif count > 0:
-                        cut = code
-                    elif cut == -1:
-                        cut = text.rfind('\n', 0, 4096)
-                    else:
-                        cut = text.rfind(' ', 0, 4096)
-                    temporary, text = text[:cut], text[cut:]
-                    await try_edit_message(message_1, cgtm(temporary))
-                    await bot_send_message(message.chat.id, cgtm(text), disable_notification=disable_notification)
-            else:
-                await bot_send_message(message.chat.id, cgtm(temp_text), disable_notification=disable_notification)
-        logging.debug(text or temp_text + '\n' + '=' * 100)
-        logging.debug(cgtm(text or temp_text))
+                    await bot_send_message(
+                        message,
+                        cgtm(temp_text),
+                        reply_markup_func=additional_features,
+                        disable_notification=disable_notification,
+                        user_id=user_id
+                    )
+            logging.debug(text or temp_text + '\n' + '=' * 100)
+            logging.debug(cgtm(text or temp_text))
+    except Exception as e:
+        logging.error(e)
+        if "No generation chunks were returned" in str(e):
+            await bot.send_message(chat_id=message.chat.id, text="No response from the model. Perhaps you exceeded your quota. Try again later or change the model.")
+        else:
+            await bot.send_message(chat_id=message.chat.id, text=f"An error occured while generating a response.")
 
     if not users.temp(user_id):
         if users.model(user_id) == 'english':
@@ -427,26 +424,33 @@ async def send_photo(message: Message, voice_text: str | None = None):
         task.cancel()
 
 async def handle_voice(message: Message):
-    try:
-        user_model = users.model(message.from_user.id)
-        if user_model != await available_model(message):
-            return
-        user_id = message.from_user.id
+    # try:
+    user_model = users.model(message.from_user.id)
+    if user_model != await available_model(message):
+        return
+    user_id = message.from_user.id
 
-        await bot.send_chat_action(message.chat.id, "typing" if users.model(user_id) != 'flux' else "upload_photo")
+    await bot.send_chat_action(message.chat.id, "typing" if users.model(user_id) != 'flux' else "upload_photo")
 
-        text_from_voice = await available_models['stt']['faster-whisper'](message.voice.file_id)
+    text_from_voice = await available_models['stt']['faster-whisper'](message.voice.file_id)
 
-        if text_from_voice:
-            if user_model not in available_models['tti']:
-                await send_text(message, text_from_voice)
-            else:
-                await send_photo(message, text_from_voice)
+    if text_from_voice:
+        if user_model not in available_models['tti']:
+            voice_message = await bot_send_message(
+                message,
+                cgtm(f">{text_from_voice}"),
+                additional_features,
+                disable_notification=True,
+                user_id=user_id
+                )
+            await send_text(message, voice_message)
         else:
-            await message.answer('An error occurred while extracting the text.')
-    except Exception as e:
-        await message.answer('Error handling voice message.')
-        logging.error(e)
+            await send_photo(message, text_from_voice)
+    else:
+        await message.answer('An error occurred while extracting the text.')
+    # except Exception as e:
+    #     await message.answer('Error handling voice message.')
+    #     logging.error(e)
 
 async def send_sticker(message: Message):
     await bot.send_chat_action(message.chat.id, "choose_sticker")
