@@ -1,285 +1,26 @@
-import requests
 import asyncio
-import psycopg
-from psycopg.sql import SQL, Identifier
-from typing import Any
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, ChatMemberUpdatedFilter, KICKED
-from aiogram.types import Message, ChatMemberUpdated, BotCommand, CallbackQuery
+from aiogram.types import Message, ChatMemberUpdated, BotCommand
 
+from commands import handle_commands, commands
+from callbacks import *
 from src.models import history_chat as hc, available_models
 from src.tools import (
     convert_gemini_to_markdown as cgtm,
     lp,
-    generate_settings_text,
     bot_send_message,
     try_edit_message
 )
 from src.filters import ModelCallback, TTSCallback, available_model
-from src.keyboards import generate_inline_keyboard, additional_features
+from src.keyboards import additional_features
 from config import config
-
+from src.users import update_user_data
 
 dp = Dispatcher()
-bot = config.bot
-users = config.users
 model_names = config.model_names
 users.load_from_db()
-logging = config.logging
-
-async def get_user_data(user_id: int, columns: list[str] | str) -> tuple | Any | None:
-    if isinstance(columns, str):
-        columns = [columns]
-    with psycopg.connect(config.sqlconninfo) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                SQL('SELECT {columns} FROM users WHERE id = %s').format(
-                    columns=SQL(',').join([Identifier(column) for column in columns])
-                    ),
-                (user_id,)
-            )
-            result = cur.fetchone()
-            if len(result) == 1:
-                return result[0]
-            return result
-
-async def update_user_data(id: int, parameter: str, value) -> None:
-    """
-    Updates a specific parameter for a user in the database.
-    Args:
-        id (int): The ID of the user whose parameter is to be updated.
-        parameter (str): The name of the parameter/column to update.
-        value: The new value to set for the specified parameter.
-    Returns:
-        None
-    Raises:
-        sqlite3.Error: If a database error occurs during the operation.
-    """
-
-    allowed_columns = {"stream", "temp", "model", "block", "eng_his", "oth_his"}
-    if parameter not in allowed_columns:
-        raise ValueError(f"Invalid column name: {parameter}")
-
-    with psycopg.connect(config.sqlconninfo, autocommit=True) as conn:
-        with conn.cursor() as cur:
-            cur.execute(SQL('UPDATE users SET {} = %s WHERE id = %s').format(Identifier(parameter)), (value, id))
-
-async def answer_start(message: Message):
-    await bot.send_chat_action(message.chat.id, "typing")
-
-    user_id = message.from_user.id
-    with psycopg.connect(config.sqlconninfo, autocommit=True) as aconn:
-        with aconn.cursor() as cur:
-            cur.execute('SELECT id FROM users WHERE id = %s', (user_id, ))
-            if not cur.fetchone():
-                cur.execute(
-                    "INSERT INTO users (id, first_name, lang) VALUES (%s, %s, %s)",
-                    (user_id,
-                    message.from_user.first_name,
-                    message.from_user.language_code)
-                    )
-                users.add_user(user_id, lang=message.from_user.language_code)
-            else:
-                cur.execute('UPDATE users SET block = false WHERE id = %s;', (user_id, ))
-
-    logging.info(f"{user_id}, {message.from_user.first_name}, {message.from_user.language_code}")
-    await message.answer(
-        "*Приветствую!*\nЯ - бот с искусственным интеллектом.\nМогу помочь с изучением английского языка."
-        " Также могу служить помощником в различных задачах.\nДля дополнительной информации отправь - /help!",
-        parse_mode='Markdown'
-    )
-
-async def display_user_settings(message: Message):
-    await bot.send_chat_action(message.chat.id, "typing")
-
-    stream = users.stream(message.from_user.id)
-    model = users.model(message.from_user.id)
-    await message.answer(
-        generate_settings_text(message.from_user.id),
-        reply_markup=generate_inline_keyboard(message.from_user.id, stream, model),
-        parse_mode='Markdown'
-    )
-
-async def handle_callback_settings(query: CallbackQuery):
-    user_id = query.message.chat.id
-    model = users.model(user_id)
-
-    match query.data:
-        case "stream":
-            users.dict[user_id].stream = not users.stream(user_id)
-            stream = users.stream(user_id)
-            await update_user_data(user_id, 'stream', stream)
-            await query.message.edit_text(
-                generate_settings_text(user_id),
-                reply_markup=generate_inline_keyboard(user_id, stream, model),
-                parse_mode='Markdown')
-            await query.answer("Стриминг " + ["деактивирован.", "активирован."][stream])
-        case "clear":
-            if not users.temp(user_id):
-                if model == 'english':
-                    users.english(user_id).clear()
-                    await update_user_data(user_id, 'eng_his', '{"messages":[]}')
-                    await query.answer("История английского чата очищена.")
-                else:
-                    users.other(user_id).clear()
-                    await update_user_data(user_id, 'oth_his', '{"messages":[]}')
-                    await query.answer("История прочего чата очищена.")
-            else:
-                users.temphis(user_id).clear()
-                await query.answer("История временного чата очищена.")
-        case "temp":
-            users.dict[user_id].temp = not users.temp(user_id)
-            temp = users.temp(user_id)
-            stream = users.stream(user_id)
-            await update_user_data(user_id, 'temp', temp)
-            await query.message.edit_text(
-                generate_settings_text(user_id),
-                reply_markup=generate_inline_keyboard(user_id, stream, model),
-                parse_mode='Markdown')
-            await query.answer("Временный чат " + ["деактивирован.", "активирован."][temp])
-
-async def callback_model(query: CallbackQuery, callback_data: ModelCallback):
-    user_id = query.message.chat.id
-
-    #Checking if id in callback matches with id from query
-    if callback_data.user_id == user_id:
-        stream = users.stream(user_id)
-        model = callback_data.model
-
-        await update_user_data(user_id, 'model', model)
-        users.dict[user_id].model = model
-
-        await query.message.edit_text(
-            generate_settings_text(user_id),
-            reply_markup=generate_inline_keyboard(user_id, stream, model),
-            parse_mode='Markdown')
-
-        await query.answer("Модель обновлена.")
-    else:
-        await query.answer("Error.")
-
-async def callback_tts(query: CallbackQuery, callback_data: TTSCallback):
-
-    user_id = query.from_user.id
-    tts_model = callback_data.tts_model
-    text = query.message.text
-
-    if callback_data.user_id == user_id:
-        tts_model = available_models['tts'].get(tts_model, None)
-        if tts_model:
-            await tts_model(query.message, text)
-            await query.answer()
-        else:
-            await query.answer("Error. Model is not available.")
-    else:
-        await query.answer("Error.")
-
-async def show_history(message: Message):
-    user_id = message.from_user.id
-
-    if users.temp(user_id):
-        lang_group = "temphis"
-    elif users.model(user_id) == "english":
-        lang_group = "eng"
-    else:
-        lang_group = "oth"
-    messages = users.get_user_history(user_id, lang_group).messages
-    text = []
-    for m in messages:
-        mtext = m.text()
-        if len(mtext) > 50:
-            mtext = mtext[:50] + '...'
-        postfix = ""
-        if m.type != 'human':
-            postfix = '\n'
-        text.append(f"{m.type[:2].upper()}: {mtext}\n{postfix}")
-
-    text = ''.join(text)
-    if text:
-        await message.answer(text)
-    else:
-        await message.answer('History is empty.')
-
-async def handle_commands(message: Message):
-    commands = {
-        '/settings': display_user_settings,
-        '/help': display_user_settings,
-        '/temp': change_temp,
-        '/stream': change_stream,
-        '/clear': clear_history,
-        '/start': answer_start,
-        '/history': show_history
-    }
-    for command in commands:
-        if message.text.startswith(command):
-            await commands[command](message)
-            break
-
-async def change_stream(message: Message):
-    await bot.send_chat_action(message.chat.id, "typing")
-    await message.delete()
-
-    user_id = message.from_user.id
-    users.dict[user_id].stream = not users.stream(user_id)
-    stream = users.stream(user_id)
-    await update_user_data(user_id, 'stream', stream)
-
-    await message.answer(f"{'Режим стриминга сообщений для ответов ИИ активирован.'if stream else "Режим стриминга сообщений для ответов ИИ деактивирован."}")
-
-async def change_temp(message: Message):
-    await bot.send_chat_action(message.chat.id, "typing")
-    await message.delete()
-
-    user_id = message.from_user.id
-    users.dict[user_id].temp = not users.temp(user_id)
-    temp = users.temp(user_id)
-    await update_user_data(user_id, 'temp', temp)
-
-    await message.answer('Временный чат ' + ["деактивирован.", "активирован."][temp])
-
-async def callback_pets(callback: CallbackQuery):
-    if callback.data == 'fox':
-        await callback.message.answer_photo(
-            requests.get("https://randomfox.ca/floof").json()["image"],
-            caption=f"{callback.message.chat.first_name}, ваша 🦊 лисичка",
-        )
-        await callback.answer()
-    elif callback.data == 'dog':
-        await callback.message.answer_photo(
-            requests.get("https://random.dog/woof.json").json()["url"],
-            caption=f"{callback.message.chat.first_name}, ваша 🐶 собачка",
-        )
-        await callback.answer()
-    elif callback.data == 'cat':
-        await callback.message.answer_photo(
-            requests.get("https://api.thecatapi.com/v1/images/search").json()[0]["url"],
-            caption=f"{callback.message.chat.first_name}, ваш 🐈 котик ",
-        )
-        await callback.answer()
-
-async def clear_history(message: Message):
-    await bot.send_chat_action(message.chat.id, "typing")
-    await message.delete()
-
-    user_id = message.from_user.id
-    model = users.model(user_id)
-
-    if model in available_models['ttt']:
-        if not users.temp(user_id):
-            if model == 'english':
-                users.english(user_id).clear()
-                await update_user_data(user_id, 'eng_his', '{"messages":[]}')
-                await message.answer("История английского чата очищена.")
-            else:
-                users.other(user_id).clear()
-                await update_user_data(user_id, 'oth_his', '{"messages":[]}')
-                await message.answer("История всех чатов, кроме английского, очищена.")
-        else:
-            users.temphis(user_id).clear()
-            await message.answer("История временного чата очищена.")
-    else:
-        await message.answer(f"Модель {config.model_names[model]} не поддерживает историю чата.")
 
 async def send_text(message: Message, voice_message: Message | None = None):
 
@@ -426,13 +167,13 @@ async def send_text(message: Message, voice_message: Message | None = None):
         if "No generation chunks were returned" in str(e):
             await bot.send_message(chat_id=message.chat.id, text="No response from the model. Perhaps you exceeded your quota. Try again later or change the model.")
         else:
-            await bot.send_message(chat_id=message.chat.id, text=f"An error occured while generating a response.")
+            await bot.send_message(chat_id=message.chat.id, text="An error occured while generating a response.")
 
     if not users.temp(user_id):
         if users.model(user_id) == 'english':
-            await update_user_data(user_id, "eng_his", users.english(user_id).model_dump_json())
+            await update_user_data(user_id, "eng_his", users.english(user_id).model_dump_json(), config.sqlconninfo)
         else:
-            await update_user_data(user_id, "oth_his", users.other(user_id).model_dump_json())
+            await update_user_data(user_id, "oth_his", users.other(user_id).model_dump_json(), config.sqlconninfo)
 
 async def send_photo(message: Message, voice_text: str | None = None):
 
@@ -491,21 +232,21 @@ async def send_copy(message: Message):
         await message.reply("Извините, но сообщение не распознано.")
 
 async def block(event: ChatMemberUpdated):
-    await update_user_data(event.from_user.id, 'block', 1)
+    await update_user_data(event.from_user.id, 'block', 1, config.sqlconninfo)
     print(event.from_user.id, event.from_user.first_name, "blocked the bot")
 
 async def set_main_menu(bot: Bot):
     main_menu_commands = [
-        BotCommand(command='/help',
-                   description='Показать  настройки'),
+        BotCommand(command='/info',
+                   description='Настройки'),
+        BotCommand(command='/history',
+                   description='История чата'),
+        BotCommand(command='/clear',
+                   description='Очистить историю сообщений'),
         BotCommand(command='/temp',
                    description='Переключить режим временного чата'),
-        BotCommand(command='/history',
-                   description='Отобразить историю чата'),
         BotCommand(command='/stream',
                    description='Переключить режим стриминга ответов ИИ'),
-        BotCommand(command='/clear',
-                   description='Очистить историю сообщений')
     ]
     await bot.set_my_commands(main_menu_commands)
 
@@ -513,7 +254,8 @@ dp.callback_query.register(handle_callback_settings, F.data.in_(['stream', 'clea
 dp.callback_query.register(callback_model, ModelCallback.filter(F.model.in_(available_models['ttt'] | available_models['tti'])))
 dp.callback_query.register(callback_tts, TTSCallback.filter(F.tts_model.in_(available_models['tts'])))
 dp.callback_query.register(callback_pets, F.data.in_(['fox', 'dog', 'cat']))
-dp.message.register(handle_commands, Command("settings", "help", "stream", "clear", "start", "temp", "history"))
+import re
+dp.message.register(handle_commands, Command(*commands, re.compile(r"del_(\d+)"), re.compile(r"show_(\d+)")))
 dp.message.register(send_photo, F.text, lambda m: users.model(m.from_user.id) in available_models['tti'] )
 dp.message.register(send_text, F.text)#model_answer
 dp.message.register(handle_voice, F.voice)

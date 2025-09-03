@@ -31,12 +31,12 @@ template_rag = """
 """
 
 def get_by_session(session: dict) -> UserChatHistory:
-    return config.users.get_user_history(session['user_id'], session['lang_group'])
+    return config.users.get_user_history(session['user_id'])
 
 def google_chain(
     model: str = "models/gemini-2.5-flash",
     prompt: ChatPromptTemplate = prompt,
-    temperature: float = 0.9,
+    temperature: float = 0.8,
     top_p: float | None = None,
     max_output_tokens: int | None = None,
     **kwargs

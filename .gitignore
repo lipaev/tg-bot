@@ -6,7 +6,6 @@ users.csv
 .env copy
 todo
 messages.py
-commands.py
 faiss_db_tkrb
 rag.ipynb
 chroma

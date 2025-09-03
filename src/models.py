@@ -40,26 +40,21 @@ available_models = {
 
 
 async def history_chat(
-    message: Message, chain: str, message_text: str | None = None, stream: bool = True
+    message: Message,
+    chain: str,
+    message_text: str | None = None,
+    stream: bool = True
 ) -> Iterator[BaseMessageChunk] | BaseMessage:
     """Asynchronous chat with history"""
 
     message_text = message_text or message.text
     user_id = message.from_user.id
 
-    # Set up a chat where the history will be saved.
-    if config.users.temp(user_id):
-        lang_group = "temphis"
-    elif chain == "english":
-        lang_group = "eng"
-    else:
-        lang_group = "oth"
-
     # If more than 80 messages from a user and a bot, then delete 2 oldest messages.
-    if len(config.users.get_user_history(user_id, lang_group).messages) > 80:
-        del config.users.get_user_history(user_id, lang_group).messages[:2]
+    if len(config.users.get_user_history(user_id).messages) > 80:
+        del config.users.get_user_history(user_id).messages[:2]
         config.logging.info(
-            f'2 oldest messages from the "{lang_group}" group have been deleted.'
+            f'2 oldest messages have been deleted.'
         )
 
     if message.quote:
@@ -75,7 +70,7 @@ async def history_chat(
             },
             config={
                 "configurable": {
-                    "session_id": {"user_id": user_id, "lang_group": lang_group}
+                    "session_id": {"user_id": user_id}
                 }
             },
         )
@@ -87,7 +82,7 @@ async def history_chat(
             },
             config={
                 "configurable": {
-                    "session_id": {"user_id": user_id, "lang_group": lang_group}
+                    "session_id": {"user_id": user_id}
                 }
             },
         )
