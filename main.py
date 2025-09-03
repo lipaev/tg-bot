@@ -175,19 +175,46 @@ async def callback_tts(query: CallbackQuery, callback_data: TTSCallback):
     else:
         await query.answer("Error.")
 
+async def show_history(message: Message):
+    user_id = message.from_user.id
+
+    if users.temp(user_id):
+        lang_group = "temphis"
+    elif users.model(user_id) == "english":
+        lang_group = "eng"
+    else:
+        lang_group = "oth"
+    messages = users.get_user_history(user_id, lang_group).messages
+    text = []
+    for m in messages:
+        mtext = m.text()
+        if len(mtext) > 50:
+            mtext = mtext[:50] + '...'
+        postfix = ""
+        if m.type != 'human':
+            postfix = '\n'
+        text.append(f"{m.type[:2].upper()}: {mtext}\n{postfix}")
+
+    text = ''.join(text)
+    if text:
+        await message.answer(text)
+    else:
+        await message.answer('History is empty.')
+
 async def handle_commands(message: Message):
-    if message.text.startswith(('/settings', '/help')):
-        await display_user_settings(message)
-    elif message.text.startswith('/temp'):
-        await change_temp(message)
-    elif message.text.startswith('/stream'):
-        await change_stream(message)
-    elif message.text.startswith('/clear'):
-        await clear_history(message)
-    elif message.text.startswith('/start'):
-        await answer_start(message)
-    # elif message.text.startswith('/read_aloud'):
-    #     await
+    commands = {
+        '/settings': display_user_settings,
+        '/help': display_user_settings,
+        '/temp': change_temp,
+        '/stream': change_stream,
+        '/clear': clear_history,
+        '/start': answer_start,
+        '/history': show_history
+    }
+    for command in commands:
+        if message.text.startswith(command):
+            await commands[command](message)
+            break
 
 async def change_stream(message: Message):
     await bot.send_chat_action(message.chat.id, "typing")
@@ -470,13 +497,15 @@ async def block(event: ChatMemberUpdated):
 async def set_main_menu(bot: Bot):
     main_menu_commands = [
         BotCommand(command='/help',
-                   description='показать  настройки'),
+                   description='Показать  настройки'),
         BotCommand(command='/temp',
-                   description='переключить режим временного чата'),
+                   description='Переключить режим временного чата'),
+        BotCommand(command='/history',
+                   description='Отобразить историю чата'),
         BotCommand(command='/stream',
-                   description='переключить режим стриминга ответов ИИ'),
+                   description='Переключить режим стриминга ответов ИИ'),
         BotCommand(command='/clear',
-                   description='очистить историю сообщений')
+                   description='Очистить историю сообщений')
     ]
     await bot.set_my_commands(main_menu_commands)
 
@@ -484,7 +513,7 @@ dp.callback_query.register(handle_callback_settings, F.data.in_(['stream', 'clea
 dp.callback_query.register(callback_model, ModelCallback.filter(F.model.in_(available_models['ttt'] | available_models['tti'])))
 dp.callback_query.register(callback_tts, TTSCallback.filter(F.tts_model.in_(available_models['tts'])))
 dp.callback_query.register(callback_pets, F.data.in_(['fox', 'dog', 'cat']))
-dp.message.register(handle_commands, Command("settings", "help", "stream", "clear", "start", "temp"))
+dp.message.register(handle_commands, Command("settings", "help", "stream", "clear", "start", "temp", "history"))
 dp.message.register(send_photo, F.text, lambda m: users.model(m.from_user.id) in available_models['tti'] )
 dp.message.register(send_text, F.text)#model_answer
 dp.message.register(handle_voice, F.voice)

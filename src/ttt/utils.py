@@ -30,16 +30,17 @@ template_rag = """
 Ответ:
 """
 
-def get_by_session_id(session_id: dict) -> UserChatHistory:
-    return config.users.get_user_history(session_id['user_id'], session_id['lang_group'])
+def get_by_session(session: dict) -> UserChatHistory:
+    return config.users.get_user_history(session['user_id'], session['lang_group'])
 
 def google_chain(
     model: str = "models/gemini-2.5-flash",
     prompt: ChatPromptTemplate = prompt,
     temperature: float = 0.9,
-    top_p: float| None = None,
-    max_output_tokens: int| None = None,
-    **kwargs):
+    top_p: float | None = None,
+    max_output_tokens: int | None = None,
+    **kwargs
+    ):
     return RunnableWithMessageHistory(
         prompt | ChatGoogleGenerativeAI(
             model=model,
@@ -48,6 +49,7 @@ def google_chain(
             max_output_tokens=max_output_tokens,
             **kwargs
             ),
-        get_by_session_id,
+        get_by_session,
         input_messages_key="question",
-        history_messages_key="history")
+        history_messages_key="history"
+        )
