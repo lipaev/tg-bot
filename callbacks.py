@@ -1,11 +1,12 @@
 import requests
-from src.models import available_models
 from config import config
+from commands import show_history
 from src.users import update_user_data
+from src.tools import generate_settings_text
+from src.models import available_models
+from src.filters import ModelCallback, TTSCallback
 from src.keyboards import generate_inline_keyboard
 from aiogram.types import CallbackQuery
-from src.filters import ModelCallback, TTSCallback
-from src.tools import generate_settings_text
 
 logging = config.logging
 users = config.users
@@ -48,6 +49,12 @@ async def handle_callback_settings(query: CallbackQuery):
                 reply_markup=generate_inline_keyboard(user_id, stream, model),
                 parse_mode='Markdown')
             await query.answer("Временный чат " + ["деактивирован.", "активирован."][temp])
+        case "history":
+            await show_history(query.message, quser_id=user_id)
+            await query.answer()
+        case "delete":
+            await query.message.delete()
+            await query.answer("Удалено.")
 
 async def callback_model(query: CallbackQuery, callback_data: ModelCallback):
     user_id = query.message.chat.id

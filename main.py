@@ -1,3 +1,4 @@
+import re
 import asyncio
 
 from aiogram import Bot, Dispatcher, F
@@ -14,7 +15,7 @@ from src.tools import (
     try_edit_message
 )
 from src.filters import ModelCallback, TTSCallback, available_model
-from src.keyboards import additional_features
+from src.keyboards import additional_keyboard
 from config import config
 from src.users import update_user_data
 
@@ -27,7 +28,7 @@ async def send_text(message: Message, voice_message: Message | None = None):
     await bot.send_chat_action(message.chat.id, "typing")
 
     if voice_message:
-        message_text = voice_message.text
+        message_text = voice_message.text.lstrip('> ')
     else:
         message_text = message.text
 
@@ -49,7 +50,7 @@ async def send_text(message: Message, voice_message: Message | None = None):
                         message,
                         ctext,
                         disable_notification=disable_notification,
-                        reply_markup_func=additional_features,
+                        reply_markup_func=additional_keyboard,
                         user_id=user_id
                         )
                     break
@@ -71,6 +72,7 @@ async def send_text(message: Message, voice_message: Message | None = None):
                         message,
                         temporary,
                         disable_notification=disable_notification,
+                        reply_markup_func=additional_keyboard,
                         user_id=user_id
                     )
                     disable_notification = True
@@ -86,7 +88,7 @@ async def send_text(message: Message, voice_message: Message | None = None):
                         ctext = cgtm(text)
                         temp_text = ''
                         if len(ctext) <= 4096:
-                            await try_edit_message(message_1, ctext, additional_features, user_id=user_id)
+                            await try_edit_message(message_1, ctext, additional_keyboard, user_id=user_id)
                         else:
                             count = text[0:4096].count('```')
                             code = text[0:4096].rfind('```')
@@ -101,11 +103,14 @@ async def send_text(message: Message, voice_message: Message | None = None):
                             else:
                                 cut = text.rfind(' ', 0, 4096)
                             temporary, text = text[:cut], text[cut:]
-                            await try_edit_message(message_1, cgtm(temporary), additional_features, user_id=user_id)
+                            converted_tmp = cgtm(temporary)
+                            await try_edit_message(message_1, converted_tmp, additional_keyboard, user_id=user_id)
+                            logging.debug('=' * 100 + '\n' + temporary + '\n' + '=' * 100)
+                            logging.debug(converted_tmp + '\n' + '=' * 100)
                             message_1 = await bot_send_message(
                                 message,
                                 cgtm(text),
-                                reply_markup_func=additional_features,
+                                reply_markup_func=additional_keyboard,
                                 disable_notification=disable_notification,
                                 user_id=user_id
                             )
@@ -117,7 +122,7 @@ async def send_text(message: Message, voice_message: Message | None = None):
                         message_1 = await bot_send_message(
                             message,
                             cgtm(temp_text),
-                            reply_markup_func=additional_features,
+                            reply_markup_func=additional_keyboard,
                             disable_notification=disable_notification,
                             user_id=user_id
                         )
@@ -129,7 +134,7 @@ async def send_text(message: Message, voice_message: Message | None = None):
                     text += temp_text
                     ctext = cgtm(text)
                     if len(ctext) <= 4096:
-                        await try_edit_message(message_1, ctext, additional_features, user_id=user_id)
+                        await try_edit_message(message_1, ctext, additional_keyboard, user_id=user_id)
                     else:
                         count = text[0:4096].count('```')
                         code = text[0:4096].rfind('```')
@@ -144,11 +149,11 @@ async def send_text(message: Message, voice_message: Message | None = None):
                         else:
                             cut = text.rfind(' ', 0, 4096)
                         temporary, text = text[:cut], text[cut:]
-                        await try_edit_message(message_1, cgtm(temporary), additional_features, user_id=user_id)
+                        await try_edit_message(message_1, cgtm(temporary), additional_keyboard, user_id=user_id)
                         await bot_send_message(
                             message,
                             cgtm(text),
-                            reply_markup_func=additional_features,
+                            reply_markup_func=additional_keyboard,
                             disable_notification=disable_notification,
                             user_id=user_id
                         )
@@ -156,12 +161,12 @@ async def send_text(message: Message, voice_message: Message | None = None):
                     await bot_send_message(
                         message,
                         cgtm(temp_text),
-                        reply_markup_func=additional_features,
+                        reply_markup_func=additional_keyboard,
                         disable_notification=disable_notification,
                         user_id=user_id
                     )
-            logging.debug(text or temp_text + '\n' + '=' * 100)
-            logging.debug(cgtm(text or temp_text))
+                logging.debug('=' * 100 + '\n' + text or temp_text + '\n' + '=' * 100)
+                logging.debug(cgtm(text or temp_text) + '\n' + '=' * 100)
     except Exception as e:
         logging.error(e)
         if "No generation chunks were returned" in str(e):
@@ -191,8 +196,7 @@ async def send_photo(message: Message, voice_text: str | None = None):
     finally:
         task.cancel()
 
-async def handle_voice(message: Message):
-    # try:
+async def process_voice(message: Message):
     user_model = users.model(message.from_user.id)
     if user_model != await available_model(message):
         return
@@ -206,8 +210,8 @@ async def handle_voice(message: Message):
         if user_model not in available_models['tti']:
             voice_message = await bot_send_message(
                 message,
-                cgtm(f">{text_from_voice}"),
-                additional_features,
+                ">" + cgtm(text_from_voice),
+                additional_keyboard,
                 disable_notification=True,
                 user_id=user_id
                 )
@@ -216,29 +220,26 @@ async def handle_voice(message: Message):
             await send_photo(message, text_from_voice)
     else:
         await message.answer('An error occurred while extracting the text.')
-    # except Exception as e:
-    #     await message.answer('Error handling voice message.')
-    #     logging.error(e)
 
-async def send_sticker(message: Message):
+async def process_sticker(message: Message):
     await bot.send_chat_action(message.chat.id, "choose_sticker")
     print(message.sticker)
     await message.answer_sticker(message.sticker.file_id, caption=message.caption)
 
-async def send_copy(message: Message):
+async def process_all(message: Message):
     try:
         await message.send_copy(message.chat.id)
     except TypeError:
         await message.reply("Извините, но сообщение не распознано.")
 
-async def block(event: ChatMemberUpdated):
+async def process_block(event: ChatMemberUpdated):
     await update_user_data(event.from_user.id, 'block', 1, config.sqlconninfo)
     print(event.from_user.id, event.from_user.first_name, "blocked the bot")
 
 async def set_main_menu(bot: Bot):
     main_menu_commands = [
         BotCommand(command='/info',
-                   description='Настройки'),
+                   description='Информация'),
         BotCommand(command='/history',
                    description='История чата'),
         BotCommand(command='/clear',
@@ -250,18 +251,17 @@ async def set_main_menu(bot: Bot):
     ]
     await bot.set_my_commands(main_menu_commands)
 
-dp.callback_query.register(handle_callback_settings, F.data.in_(['stream', 'clear', 'temp']))
+dp.callback_query.register(handle_callback_settings, F.data.in_(['stream', 'clear', 'temp', 'delete', "history"]))
 dp.callback_query.register(callback_model, ModelCallback.filter(F.model.in_(available_models['ttt'] | available_models['tti'])))
 dp.callback_query.register(callback_tts, TTSCallback.filter(F.tts_model.in_(available_models['tts'])))
 dp.callback_query.register(callback_pets, F.data.in_(['fox', 'dog', 'cat']))
-import re
 dp.message.register(handle_commands, Command(*commands, re.compile(r"del_(\d+)"), re.compile(r"show_(\d+)")))
 dp.message.register(send_photo, F.text, lambda m: users.model(m.from_user.id) in available_models['tti'] )
-dp.message.register(send_text, F.text)#model_answer
-dp.message.register(handle_voice, F.voice)
-dp.message.register(send_sticker, lambda m: m.sticker)
-dp.message.register(send_copy)
-dp.my_chat_member.register(block, ChatMemberUpdatedFilter(KICKED))
+dp.message.register(send_text, F.text)
+dp.message.register(process_voice, F.voice)
+dp.message.register(process_sticker, lambda m: m.sticker)
+dp.message.register(process_all)
+dp.my_chat_member.register(process_block, ChatMemberUpdatedFilter(KICKED))
 dp.startup.register(set_main_menu)
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
-from aiogram.types import Message
-from src.models import available_models
+import psycopg
+from aiogram.types import Message, CallbackQuery
 from config import config
 from src.users import update_user_data
-from src.keyboards import generate_inline_keyboard
-from src.tools import convert_gemini_to_markdown as cgtm
-import psycopg
+from src.models import available_models
+from src.keyboards import generate_inline_keyboard, additional_keyboard
+from src.tools import convert_gemini_to_markdown as cgtm, bot_send_message
 
 logging = config.logging
 users = config.users
@@ -16,30 +16,79 @@ async def handle_commands(message: Message):
             await commands[command](message)
             return True
 
-async def show_history(message: Message, edit_message_id: int | None=None):
-    user_id = message.from_user.id
+async def show_history(message: Message, *, edit_message_id: int=0, quser_id: int | None=None):
+    """
+    Shows a message history.
+
+    Args:
+        message: aiogram message object.
+        edit_message_id: The last showing history message id. Defaults to 0.
+        quser_id: The user id from a CallbackQuery. Defaults to None.
+    """
+    user_id = quser_id or message.from_user.id
 
     messages = users.get_user_history(user_id).messages
     text = []
+    len_mess = len(messages)
+    if not len_mess:
+        await message.answer('History is empty.')
+        return
+    max_length = 4096 // len_mess
+    logging.info(f"Max_length: {max_length}")
+    available_characters = 0
+    full_length = 0
+    raw_length = 0
     for n, m in enumerate(messages, 1):
-        mtext = m.text().split()
-        if len(mtext) > 8:
-            mtext = ' '.join(mtext[:8]) + '...'
-        else:
-            mtext = ' '.join(mtext)
+        six = 0
+        mtext = m.text()
         postfix = ""
         if m.type != 'human':
-            postfix = f'/del_{n//2}  /show_{n//2}\n'
-        text.append(f"{m.type[:2].upper()}: {mtext}\n{postfix}")
-
-    text = ''.join(text)
-    if text:
-        if edit_message_id and edit_message_id != 0:
-            await bot.edit_message_text(text, chat_id=message.chat.id, message_id=edit_message_id)
+            postfix = f'/del\_{n//2}  /show\_{n//2}\n'
+            emoji = '🤖'
         else:
-            message = await message.answer(text)
+            emoji = '👶'
+        template_text = "**>{}{}||\n" + postfix
+        convertedMtext = cgtm(mtext, expandable=True)
+        len_convertedMtext = len(convertedMtext)
+        len_templateText = len(template_text)
+        if len_convertedMtext + len_templateText - 3 > max_length:
+            # 3 - скобки и эмодзи в шаблоне 6 - экранированные точки в конце
+            six = 6
+            logging.debug(
+                template_text.format(emoji, mtext[:max_length - len_templateText + 3 - six + available_characters] + '...')
+                )
+            convertedMtext = cgtm(
+                mtext[:max_length - len_templateText + 3 - 6 + available_characters] + '...',
+                expandable=True
+                )
+            available_characters = 0
+        else:
+            available_characters += max_length - (len_convertedMtext + len_templateText - 3)
+            logging.debug(template_text.format(emoji, mtext))
+        result = template_text.format(emoji, convertedMtext)
+        raw_length += len(template_text) - 3 + len(emoji) + len(convertedMtext) - six
+        full_length += len(result)
+        logging.info(
+            f"Result_{n}: {len(result)} ".ljust(15) + \
+            f"Available_chars: {available_characters} ".ljust(22) + \
+            f"Full: {full_length} ".ljust(10) + \
+            f"Raw: {raw_length}".ljust(9)
+            )
+        text.append(result)
+
+    text = ''.join(text).strip(" >\n")
+    if text:
+        if edit_message_id:
+            await bot.edit_message_text(text, chat_id=message.chat.id, message_id=edit_message_id, parse_mode='MarkdownV2')
+        else:
+            logging.debug(text)
+            if not quser_id:
+                await message.delete()
+            message = await message.answer(text, parse_mode='MarkdownV2')
             users.dict[user_id].last_sh_his_id = message.message_id
     else:
+        if edit_message_id:
+            await bot.delete_message(chat_id=message.chat.id, message_id=edit_message_id)
         await message.answer('History is empty.')
 
 async def clear_history(message: Message):
@@ -139,27 +188,64 @@ async def delete_message(message: Message):
 
     messages = config.users.get_user_history(user_id).messages
     if pair_number <= len(messages):
-        del messages[pair_number-2:pair_number]
+        del config.users.get_user_history(user_id).messages[pair_number-2:pair_number]
+
+        if not users.temp(user_id):
+            if users.model(user_id) == 'english':
+                await update_user_data(user_id, "eng_his", users.english(user_id).model_dump_json(), config.sqlconninfo)
+            else:
+                await update_user_data(user_id, "oth_his", users.other(user_id).model_dump_json(), config.sqlconninfo)
+
         await message.delete()
-        await show_history(message, users.last_sh_his_id(user_id))
+        await show_history(message, edit_message_id=users.last_sh_his_id(user_id))
         if not users.temp(user_id):
             if users.model(user_id) == 'english':
                 await update_user_data(user_id, "eng_his", users.english(user_id).model_dump_json(), config.sqlconninfo)
             else:
                 await update_user_data(user_id, "oth_his", users.other(user_id).model_dump_json(), config.sqlconninfo)
     else:
-        await message.answer(f"Message pair {pair_number//2} are not exist.")
+        await message.answer(f"Message pair №{pair_number//2} are not exist.")
 
-async def show_message(message: Message):
+async def show_message_pair(message: Message):
     user_id = message.from_user.id
     pair_number = 2 * int(message.text.lstrip('/del_show'))
-
     messages = config.users.get_user_history(user_id).messages
     if pair_number <= len(messages):
-        await message.delete()
-        await message.answer(cgtm(f">{messages[pair_number-2].content}\n{messages[pair_number-1].content}"), parse_mode="MarkdownV2")
+        text = f">{messages[pair_number-2].content}\n{messages[pair_number-1].content}"
+        convertedText = cgtm(text)
+        while True:
+            if len(convertedText) <= 4096:
+                message = await bot_send_message(
+                    message,
+                    convertedText,
+                    disable_notification=True,
+                    reply_markup_func=additional_keyboard,
+                    user_id=user_id
+                    )
+                break
+            else:
+                count = convertedText[0:4096].count('```')
+                code = convertedText[0:4096].rfind('```')
+                cut = convertedText[0:4096].rfind('\n\n')
+                if count % 2 == 0 and count > 0:
+                    if code > cut:
+                        cut = code + 3
+                elif count > 0:
+                    cut = code
+                elif cut == -1:
+                    cut = convertedText.rfind('\n', 0, 4096)
+                else:
+                    cut = convertedText.rfind(' ', 0, 4096)
+                temporary, convertedText = convertedText[:cut], convertedText[cut:]
+                await bot_send_message(
+                    message,
+                    temporary,
+                    disable_notification=True,
+                    reply_markup_func=additional_keyboard,
+                    user_id=user_id
+                )
     else:
-        await message.answer(f"Message pair {pair_number//2} are not exist.")
+        await message.answer(f"Message pair №{pair_number//2} are not exist.")
 
 commands = {
     'info': display_info,
@@ -169,5 +255,5 @@ commands = {
     'start': answer_start,
     'history': show_history,
     'del_': delete_message,
-    'show_': show_message
+    'show_': show_message_pair
 }

@@ -66,7 +66,9 @@ def generate_inline_keyboard(user_id: int, stream: bool, model: str) -> InlineKe
     buttons = [
         InlineKeyboardButton(text=temp_chat, callback_data='temp'),
         InlineKeyboardButton(text=stream_text, callback_data='stream'),
-        InlineKeyboardButton(text=clear_text, callback_data='clear')
+        InlineKeyboardButton(text=clear_text, callback_data='clear'),
+        InlineKeyboardButton(text="Показать историю сообщений.", callback_data='history'),
+        InlineKeyboardButton(text="Удалить это сообщение.", callback_data='delete'),
         ]
 
     builder.row(*[
@@ -76,7 +78,7 @@ def generate_inline_keyboard(user_id: int, stream: bool, model: str) -> InlineKe
 
     return builder.as_markup()
 
-def additional_features(user_id: int) -> InlineKeyboardMarkup:
+def additional_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """
     Returns a keyboard with buttons that extend an interaction with messages.
 

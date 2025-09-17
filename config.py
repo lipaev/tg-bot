@@ -43,7 +43,7 @@ stream_handler.setLevel(logging.INFO)
 
 # Common formatter
 formatter = logging.Formatter(
-    '{asctime}|{levelname:7}|{filename:13}:{lineno:3}|{name:19}|{message}',
+    '{asctime}|{levelname:6}|{filename:7}:{lineno:3}|{name:19}|{message}',
     style='{'
 )
 file_handler.setFormatter(formatter)

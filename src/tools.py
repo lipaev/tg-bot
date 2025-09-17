@@ -39,19 +39,26 @@ def convert_gemini_to_html(text: str) -> str:
     text = re.sub(r'<(/*)(b|integer)>', r'\<\1\2>', text, flags=re.IGNORECASE)
     return text
 
-def convert_gemini_to_markdown(text: str) -> str:
+def convert_gemini_to_markdown(text: str, expandable: bool=False) -> str:
     """Converts the text returned by Gemini and escaped to the MarkdownV2 format for use with aiogram."""
 
-    escape_chars = "*][)(_}{'`~>#+-=|.!"
+    escape_chars = "][)(_}{`>~#+-=|.!" #new
+    #escape_chars = "*][)(_}{'`~>#+-=|.!" #old
+    #escape_chars = "*][)(_}{`~>#+-=|.!"
     text = re.sub(r'([{}])'.format(re.escape(escape_chars)), r'\\\1', text)
-    text = re.sub(r'\\\*\\\*(.+?)\\\*\\\*', r'*\1*', text)
-    text = re.sub(r'^\s*\\\* ', ' • ', text, flags=re.MULTILINE)
-    text = re.sub(r'\\\*(.+?)\\\*', r'*\1*', text)
-    text = re.sub(r'^\s*\\#\\# (.*?)\n', r'*__\1__*\n', text, flags=re.MULTILINE)
-    text = re.sub(r'^\s*\\#\\#\\# (.*?)\n', r'*_\1_*\n', text, flags=re.MULTILINE)
+    if expandable:
+        text = re.sub(r'^\*\*\\>', '**>', text, flags=re.MULTILINE)
+        text = re.sub(r"\n(?!\*\*>)", "\n>", text, flags=re.MULTILINE) # или (?!\n*\*\*>)
+        text = re.sub(r'^> *\* ', '> • ', text, flags=re.MULTILINE)
+    text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+    text = re.sub(r'^\s*\* ', ' • ', text, flags=re.MULTILINE)
+    text = re.sub(r'\*(.+?)\*', r'*\1*', text)
+    text = re.sub(r'(^|>)\s*\\#\\#\\# (.*?)\n', r'\1*_\2_*\n', text, flags=re.MULTILINE)
+    text = re.sub(r'(^|>)\s*\\#\\# (.*?)\n', r'\1*__\2__*\n', text, flags=re.MULTILINE)
     text = re.sub(r'\\`\\`\\`([a-zA-Z]*\W*)\n(.*?)\\`\\`\\`', r'```\1\n\2\n```', text, flags=re.DOTALL)
     text = re.sub(r'(?<!`)\\`([^`\n]+?)\\`(?!`)', r'`\1`', text)
-    text = re.sub(r'^\\>', '>', text, flags=re.MULTILINE)
+    text = re.sub(r'^\\>', r'>', text, flags=re.MULTILINE)
+    text = re.sub(r'\\\|\\\|', '||', text, flags=re.MULTILINE)
     text = re.sub(r'```c\\#\n', '```csharp\n', text)
     text = re.sub(r'```c\\\+\\\+\n', '```cpp\n', text)
     #text = re.sub(r'\\_\\_(.*?)\\_\\_', r'_\1_', text)
