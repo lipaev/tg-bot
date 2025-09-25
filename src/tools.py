@@ -4,8 +4,6 @@ from config import config
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import Message
 
-logging = config.logging
-bot = config.bot
 
 def convert_gemini_to_html(text: str) -> str:
     """
@@ -41,28 +39,37 @@ def convert_gemini_to_html(text: str) -> str:
 
 def convert_gemini_to_markdown(text: str, expandable: bool=False) -> str:
     """Converts the text returned by Gemini and escaped to the MarkdownV2 format for use with aiogram."""
+    def clear_code(delete_quotes: bool=False):
+        def clear(match_obj):
+            lang = match_obj.group(1) if match_obj.group(1) else ""
+            code = match_obj.group(2)
+            if delete_quotes:
+                code = re.sub(r"\n>", r"\n", code)
+            return f"```{lang}{code.rstrip()}```"
+        return clear
 
-    escape_chars = "][)(_}{`>~#+-=|.!" #new
-    #escape_chars = "*][)(_}{'`~>#+-=|.!" #old
-    #escape_chars = "*][)(_}{`~>#+-=|.!"
+    escape_chars = "*][)(_}{`>~#+-=|.!"
+    text = re.sub(r'\\', r'\\\\', text)
     text = re.sub(r'([{}])'.format(re.escape(escape_chars)), r'\\\1', text)
     if expandable:
-        text = re.sub(r'^\*\*\\>', '**>', text, flags=re.MULTILINE)
-        text = re.sub(r"\n(?!\*\*>)", "\n>", text, flags=re.MULTILINE) # или (?!\n*\*\*>)
-        text = re.sub(r'^> *\* ', '> • ', text, flags=re.MULTILINE)
-    text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
-    text = re.sub(r'^\s*\* ', ' • ', text, flags=re.MULTILINE)
-    text = re.sub(r'\*(.+?)\*', r'*\1*', text)
-    text = re.sub(r'(^|>)\s*\\#\\#\\# (.*?)\n', r'\1*_\2_*\n', text, flags=re.MULTILINE)
-    text = re.sub(r'(^|>)\s*\\#\\# (.*?)\n', r'\1*__\2__*\n', text, flags=re.MULTILINE)
-    text = re.sub(r'\\`\\`\\`([a-zA-Z]*\W*)\n(.*?)\\`\\`\\`', r'```\1\n\2\n```', text, flags=re.DOTALL)
+        text = re.sub(r'^\\\*\\\*\\>', '**>', text, flags=re.MULTILINE)
+        text = re.sub(r"\n(?!\\\*\\\*>)", "\n>", text, flags=re.MULTILINE) # или (?!\n*\*\*>)
+        text = re.sub(r'^> *\\\* ', '> • ', text, flags=re.MULTILINE)
+        text = re.sub(r'\\\|\\\|', '||', text, flags=re.MULTILINE)
+        text = re.sub(r'> *\\`\\`\\`([a-zA-Z]*\W*)(\n.*?)\\`\\`\\`', clear_code(delete_quotes=True), text, flags=re.DOTALL)
+    else:
+        text = re.sub(r'\\`\\`\\`([a-zA-Z]*\W*)(\n.*?)\\`\\`\\`', clear_code(), text, flags=re.DOTALL)
+    text = re.sub(r'\\\*\\\*(\S.+\S)\\\*\\\*', r'*\1*', text)
+    text = re.sub(r'^ *\\\* ', ' • ', text, flags=re.MULTILINE)
+    text = re.sub(r'\\\*(\S.+\S)\\\*', r'*\1*', text)
+    text = re.sub(r'(^|>) *(\\#){2,5} (.*?)\n', r'\1*__\3__*\n', text, flags=re.MULTILINE)
+    #text = re.sub(r'(^|>) *\\#\\# (.*?)\n', r'\1*__\2__*\n', text, flags=re.MULTILINE)
     text = re.sub(r'(?<!`)\\`([^`\n]+?)\\`(?!`)', r'`\1`', text)
     text = re.sub(r'^\\>', r'>', text, flags=re.MULTILINE)
-    text = re.sub(r'\\\|\\\|', '||', text, flags=re.MULTILINE)
     text = re.sub(r'```c\\#\n', '```csharp\n', text)
     text = re.sub(r'```c\\\+\\\+\n', '```cpp\n', text)
-    #text = re.sub(r'\\_\\_(.*?)\\_\\_', r'_\1_', text)
     text = re.sub(r'\\\[(.+?)\\\]\\\((.+?)\\\)', r'[\1](\2)', text)
+    text = re.sub(r"(\\\| (.* \\\|)+\n(\\\| ?:?(\\-)+ ?)+\\\|(\n\\\| (.* \\\|)+)+)", r"```spreadsheet\n\1```", text)
 
     return text
 
@@ -156,7 +163,7 @@ async def bot_send_message(
         _description_
     """
     try:
-        return await bot.send_message(
+        return await config.bot.send_message(
             message.chat.id,
             text,
             parse_mode=parse_mode,
@@ -165,17 +172,17 @@ async def bot_send_message(
         )
     except TelegramBadRequest as e:
         if "can't parse entities" in str(e):
-            logging.error("This message can't be parsed:\n" + text)
-            return await bot.send_message(
+            config.logging.error("This message can't be parsed:\n" + text)
+            return await config.bot.send_message(
                 message.chat.id,
                 text,
                 disable_notification=disable_notification,
                 reply_markup=reply_markup_func(user_id) if reply_markup_func else None
                 )
-        logging.error(e)
-        await bot.send_message(chat_id=message.chat.id, text=str(e))
+        config.logging.error(e)
+        await config.bot.send_message(chat_id=message.chat.id, text=str(e))
     except Exception as e:
-        logging.error(f"Error sending message: {e}")
+        config.logging.error(f"Error sending message: {e}")
 
 async def try_edit_message(
     message: Message,
@@ -204,12 +211,5 @@ async def try_edit_message(
             parse_mode=parse_mode,
             reply_markup=reply_markup_func(user_id) if reply_markup_func else None
             )
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            pass
-        else:
-            logging.error(text)
-            logging.error(e)
-            await message.answer(str(e))
     except Exception as e:
-        logging.error(f"Error sending message: {str(e)}")
+        config.logging.error(f"{str(e)}\n{text}")

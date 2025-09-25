@@ -105,8 +105,8 @@ async def send_text(message: Message, voice_message: Message | None = None):
                             temporary, text = text[:cut], text[cut:]
                             converted_tmp = cgtm(temporary)
                             await try_edit_message(message_1, converted_tmp, additional_keyboard, user_id=user_id)
-                            logging.debug('=' * 100 + '\n' + temporary + '\n' + '=' * 100)
-                            logging.debug(converted_tmp + '\n' + '=' * 100)
+                            logging.debug('=' * 100 + '\n' + temporary + '\n' + ('?' * 100))
+                            logging.debug(converted_tmp + '\n' + ('=' * 100))
                             message_1 = await bot_send_message(
                                 message,
                                 cgtm(text),
@@ -165,8 +165,8 @@ async def send_text(message: Message, voice_message: Message | None = None):
                         disable_notification=disable_notification,
                         user_id=user_id
                     )
-                logging.debug('=' * 100 + '\n' + text or temp_text + '\n' + '=' * 100)
-                logging.debug(cgtm(text or temp_text) + '\n' + '=' * 100)
+                logging.debug('=' * 100 + '\n' + text or temp_text + '\n' + ('?' * 100))
+                logging.debug(cgtm(text or temp_text) + '\n' + ('=' * 100))
     except Exception as e:
         logging.error(e)
         if "No generation chunks were returned" in str(e):

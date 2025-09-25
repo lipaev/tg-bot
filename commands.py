@@ -1,5 +1,5 @@
 import psycopg
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from config import config
 from src.users import update_user_data
 from src.models import available_models
@@ -43,7 +43,7 @@ async def show_history(message: Message, *, edit_message_id: int=0, quser_id: in
         mtext = m.text()
         postfix = ""
         if m.type != 'human':
-            postfix = f'/del\_{n//2}  /show\_{n//2}\n'
+            postfix = f'/del\_{n//2}  /show\_{n//2}\n\n'
             emoji = '🤖'
         else:
             emoji = '👶'
@@ -78,13 +78,24 @@ async def show_history(message: Message, *, edit_message_id: int=0, quser_id: in
 
     text = ''.join(text).strip(" >\n")
     if text:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text="Убрать сообщение",
+                callback_data="delete"
+            )]])
         if edit_message_id:
-            await bot.edit_message_text(text, chat_id=message.chat.id, message_id=edit_message_id, parse_mode='MarkdownV2')
+            await bot.edit_message_text(
+                text,
+                chat_id=message.chat.id,
+                message_id=edit_message_id,
+                parse_mode='MarkdownV2',
+                reply_markup=keyboard
+            )
         else:
             logging.debug(text)
             if not quser_id:
                 await message.delete()
-            message = await message.answer(text, parse_mode='MarkdownV2')
+            message = await message.answer(text, parse_mode='MarkdownV2', reply_markup=keyboard)
             users.dict[user_id].last_sh_his_id = message.message_id
     else:
         if edit_message_id:

@@ -68,7 +68,7 @@ def generate_inline_keyboard(user_id: int, stream: bool, model: str) -> InlineKe
         InlineKeyboardButton(text=stream_text, callback_data='stream'),
         InlineKeyboardButton(text=clear_text, callback_data='clear'),
         InlineKeyboardButton(text="Показать историю сообщений.", callback_data='history'),
-        InlineKeyboardButton(text="Удалить это сообщение.", callback_data='delete'),
+        InlineKeyboardButton(text="Убрать сообщение", callback_data='delete'),
         ]
 
     builder.row(*[
@@ -100,6 +100,10 @@ def additional_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
     builder = InlineKeyboardBuilder()
 
-    builder.row(*[tts_button(alias, user_id) for alias in available_models['tts']])
+    builder.row(
+        *[tts_button(alias, user_id) for alias in available_models['tts']],
+        InlineKeyboardButton(text="Убрать сообщение", callback_data="delete"),
+        width=4
+        )
 
     return builder.as_markup()

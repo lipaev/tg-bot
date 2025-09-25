@@ -7,9 +7,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 
 prompt = ChatPromptTemplate.from_messages([
-    ("system", "Answer the best as possible. If you want to send a spreadsheet, then send it like code."),
-    MessagesPlaceholder(variable_name="history"),
-    ("human", "{question}")
+        ("system", "Answer the best as possible."),
+        MessagesPlaceholder(variable_name="history"),
+        ("human", "{question}")
     ])
 
 prompt_english = ChatPromptTemplate.from_messages([
