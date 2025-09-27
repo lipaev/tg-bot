@@ -59,7 +59,7 @@ class Config:
     admin_ids: list[int]
     google_api_key: str
     hf_api_key: str
-    ds_api_key: str
+    #ds_api_key: str
     model_names: dict[str, str]
     users: Users
     cipher: str
@@ -72,7 +72,7 @@ config = Config(
     admin_ids=[int(getenv('ADMIN_ID'))],
     google_api_key=getenv('GOOGLE_API_KEY'),
     hf_api_key=getenv('HF_API_KEY'),
-    ds_api_key=getenv('DEEPSEEK_API_KEY'),
+    #ds_api_key=getenv('DEEPSEEK_API_KEY'),
     model_names=model_names,
     users=Users(),
     cipher=''.join(cipher),
