@@ -2,7 +2,7 @@ import re
 import asyncio
 from config import config
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup
 
 
 def convert_gemini_to_html(text: str) -> str:
@@ -38,7 +38,11 @@ def convert_gemini_to_html(text: str) -> str:
     return text
 
 def convert_gemini_to_markdown(text: str, expandable: bool=False) -> str:
-    """Converts the text returned by Gemini and escaped to the MarkdownV2 format for use with aiogram."""
+    """Converts the text returned by Gemini and escaped to the MarkdownV2 format for use with aiogram.
+
+    Args:
+        expandable: If true, then additionally converts a text which has an expandable parts"""
+        
     def clear_code(delete_quotes: bool=False):
         def clear(match_obj):
             lang = match_obj.group(1) if match_obj.group(1) else ""
@@ -213,3 +217,55 @@ async def try_edit_message(
             )
     except Exception as e:
         config.logging.error(f"{str(e)}\n{text}")
+
+async def send_any_text(
+    message: Message,
+    text: str,
+    convert: bool,
+    user_id: int,
+    keyboard: InlineKeyboardMarkup | None=None,
+    ):
+    """
+    Sends any length text.
+
+    Args:
+        text: Text that will be converted for MarkdownV2.
+        user_id: _description_.
+        keyboard: _description_. Defaults to None.
+    """
+    if convert:
+        convertedText = convert_gemini_to_markdown(text)
+    else:
+        convertedText = text
+
+    while True:
+        if len(convertedText) <= 4096:
+            message = await bot_send_message(
+                message,
+                convertedText,
+                disable_notification=True,
+                reply_markup_func=keyboard,
+                user_id=user_id
+                )
+            break
+        else:
+            count = convertedText[0:4096].count('```')
+            code = convertedText[0:4096].rfind('```')
+            cut = convertedText[0:4096].rfind('\n\n')
+            if count % 2 == 0 and count > 0:
+                if code > cut:
+                    cut = code + 3
+            elif count > 0:
+                cut = code
+            elif cut == -1:
+                cut = convertedText.rfind('\n', 0, 4096)
+            else:
+                cut = convertedText.rfind(' ', 0, 4096)
+            temporary, convertedText = convertedText[:cut], convertedText[cut:]
+            await bot_send_message(
+                message,
+                temporary,
+                disable_notification=True,
+                reply_markup_func=keyboard,
+                user_id=user_id
+            )

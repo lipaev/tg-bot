@@ -4,6 +4,7 @@ from aiogram.types import Message
 from logging import Filter, LogRecord
 from config import config
 from .models import available_models
+from src.users import update_user_data
 
 
 class IsAdmin(BaseFilter):
@@ -48,4 +49,5 @@ async def available_model(message: Message) -> str:
             f"Модель {config.model_names[user_model]} недоступна и заменена на {config.model_names['flash']}."
         )
         config.users.dict[user_id].model = 'flash'
+        await update_user_data(user_id, 'model', 'flash', config.sqlconninfo)
         return 'flash'

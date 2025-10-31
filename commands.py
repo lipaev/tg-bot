@@ -4,8 +4,10 @@ from config import config
 from src.users import update_user_data
 from src.models import available_models
 from src.keyboards import generate_inline_keyboard, additional_keyboard
-from src.tools import convert_gemini_to_markdown as cgtm, bot_send_message
+from src.tools import convert_gemini_to_markdown as cgtm, send_any_text
+from langchain_google_genai import GoogleGenerativeAI
 
+genai_model = GoogleGenerativeAI(model="gemini-flash-lite-latest")
 logging = config.logging
 users = config.users
 bot = config.bot
@@ -223,40 +225,49 @@ async def show_message_pair(message: Message):
     messages = config.users.get_user_history(user_id).messages
     if pair_number <= len(messages):
         text = f">{messages[pair_number-2].content}\n{messages[pair_number-1].content}"
-        convertedText = cgtm(text)
-        while True:
-            if len(convertedText) <= 4096:
-                message = await bot_send_message(
-                    message,
-                    convertedText,
-                    disable_notification=True,
-                    reply_markup_func=additional_keyboard,
-                    user_id=user_id
-                    )
-                break
-            else:
-                count = convertedText[0:4096].count('```')
-                code = convertedText[0:4096].rfind('```')
-                cut = convertedText[0:4096].rfind('\n\n')
-                if count % 2 == 0 and count > 0:
-                    if code > cut:
-                        cut = code + 3
-                elif count > 0:
-                    cut = code
-                elif cut == -1:
-                    cut = convertedText.rfind('\n', 0, 4096)
-                else:
-                    cut = convertedText.rfind(' ', 0, 4096)
-                temporary, convertedText = convertedText[:cut], convertedText[cut:]
-                await bot_send_message(
-                    message,
-                    temporary,
-                    disable_notification=True,
-                    reply_markup_func=additional_keyboard,
-                    user_id=user_id
-                )
+        await send_any_text(
+            message,
+            text=text,
+            convert=True,
+            user_id=user_id,
+            keyboard=additional_keyboard
+            )
     else:
         await message.answer(f"Message pair №{pair_number//2} are not exist.")
+
+async def translate(message: Message):
+    textToTranslate = message.text[4:]
+    if textToTranslate:
+        response = await genai_model.ainvoke(
+                f"Переведи на русский язык «{textToTranslate}»"
+                )
+        await send_any_text(
+            message,
+            text=response,
+            convert=True,
+            user_id=message.from_user.id,
+            keyboard=additional_keyboard
+        )
+    else:
+        response = "Напишите текст для перевода после `/tr`\. Например: `/tr your text`\."
+        await message.answer(
+            response,
+            parse_mode="MarkdownV2",
+            reply_markup=additional_keyboard(message.from_user.id),
+        )
+    await message.delete()
+
+async def to_voice(message: Message):
+    textToVoice = message.text[4:]
+    if textToVoice:
+        await available_models["tts"]["ava_bing"](message, textToVoice)
+    else:
+        response = "Напишите текст для озвучивания после `/vc`\. Например: `/vc your text`\."
+        await message.answer(
+            response,
+            parse_mode="MarkdownV2",
+            reply_markup=additional_keyboard(message.from_user.id),
+        )
 
 commands = {
     'info': display_info,
@@ -266,5 +277,7 @@ commands = {
     'start': answer_start,
     'history': show_history,
     'del_': delete_message,
-    'show_': show_message_pair
+    'show_': show_message_pair,
+    "tr": translate,
+    "vc": to_voice
 }

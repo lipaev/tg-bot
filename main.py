@@ -1,9 +1,12 @@
 import re
+import io
 import asyncio
+
+from google.genai import types
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, ChatMemberUpdatedFilter, KICKED
-from aiogram.types import Message, ChatMemberUpdated, BotCommand
+from aiogram.types import Message, ChatMemberUpdated, BotCommand, PhotoSize, BufferedInputFile
 
 from commands import handle_commands, commands
 from callbacks import *
@@ -12,7 +15,8 @@ from src.tools import (
     convert_gemini_to_markdown as cgtm,
     lp,
     bot_send_message,
-    try_edit_message
+    try_edit_message,
+    send_any_text
 )
 from src.filters import ModelCallback, TTSCallback, available_model
 from src.keyboards import additional_keyboard
@@ -37,46 +41,45 @@ async def send_text(message: Message, voice_message: Message | None = None):
     user_id = message.from_user.id
     disable_notification = False  # For reducing unnecesary notifications
 
-    try:
-        if not users.stream(message.from_user.id):
-            basemessage = await hc(message, user_model, message_text, stream=False)
-            text = basemessage.content
-            ctext = cgtm(text)
-            logging.debug(text)
-            logging.debug(ctext)
-            while True:
-                if len(ctext) <= 4096:
-                    message = await bot_send_message(
-                        message,
-                        ctext,
-                        disable_notification=disable_notification,
-                        reply_markup_func=additional_keyboard,
-                        user_id=user_id
-                        )
-                    break
-                else:
-                    count = ctext[0:4096].count('```')
-                    code = ctext[0:4096].rfind('```')
-                    cut = ctext[0:4096].rfind('\n\n')
-                    if count % 2 == 0 and count > 0:
-                        if code > cut:
-                            cut = code + 3
-                    elif count > 0:
-                        cut = code
-                    elif cut == -1:
-                        cut = ctext.rfind('\n', 0, 4096)
-                    else:
-                        cut = ctext.rfind(' ', 0, 4096)
-                    temporary, ctext = ctext[:cut], ctext[cut:]
-                    await bot_send_message(
-                        message,
-                        temporary,
-                        disable_notification=disable_notification,
-                        reply_markup_func=additional_keyboard,
-                        user_id=user_id
+    if not users.stream(message.from_user.id):
+        basemessage = await hc(message, user_model, message_text, stream=False)
+        text = basemessage.content
+        ctext = cgtm(text)
+        logging.debug(text)
+        logging.debug(ctext)
+        while True:
+            if len(ctext) <= 4096:
+                message = await bot_send_message(
+                    message,
+                    ctext,
+                    disable_notification=disable_notification,
+                    reply_markup_func=additional_keyboard,
+                    user_id=user_id
                     )
-                    disable_notification = True
-        else:
+                break
+            else:
+                count = ctext[0:4096].count('```')
+                code = ctext[0:4096].rfind('```')
+                cut = ctext[0:4096].rfind('\n\n')
+                if count % 2 == 0 and count > 0:
+                    if code > cut:
+                        cut = code + 3
+                elif count > 0:
+                    cut = code
+                elif cut == -1:
+                    cut = ctext.rfind('\n', 0, 4096)
+                else:
+                    cut = ctext.rfind(' ', 0, 4096)
+                temporary, ctext = ctext[:cut], ctext[cut:]
+                await bot_send_message(
+                    message,
+                    temporary,
+                    disable_notification=disable_notification,
+                    reply_markup_func=additional_keyboard,
+                    user_id=user_id
+                )
+                disable_notification = True
+    else:
             text = ""
             temp_text = ""
             response = await hc(message, user_model, message_text)
@@ -167,12 +170,6 @@ async def send_text(message: Message, voice_message: Message | None = None):
                     )
                 logging.debug('=' * 100 + '\n' + text or temp_text + '\n' + ('?' * 100))
                 logging.debug(cgtm(text or temp_text) + '\n' + ('=' * 100))
-    except Exception as e:
-        logging.error(e)
-        if "No generation chunks were returned" in str(e):
-            await bot.send_message(chat_id=message.chat.id, text="No response from the model. Perhaps you exceeded your quota. Try again later or change the model.")
-        else:
-            await bot.send_message(chat_id=message.chat.id, text="An error occured while generating a response.")
 
     if not users.temp(user_id):
         if users.model(user_id) == 'english':
@@ -201,11 +198,22 @@ async def process_voice(message: Message):
     if user_model != await available_model(message):
         return
     user_id = message.from_user.id
-
     await bot.send_chat_action(message.chat.id, "typing" if users.model(user_id) != 'flux' else "upload_photo")
 
-    text_from_voice = await available_models['stt']['faster-whisper'](message.voice.file_id)
-
+    if message.voice:
+        file_id = message.voice.file_id
+        text_from_voice = await available_models['stt']['faster-whisper'](file_id)
+    elif message.audio:
+        file_id = message.audio.file_id
+        text_from_voice = await available_models['stt']['faster-whisper'](file_id)
+        await send_any_text(
+            message=message,
+            text=text_from_voice,
+            convert=True,
+            user_id=user_id,
+            keyboard=additional_keyboard
+            )
+        print(text_from_voice)
     if text_from_voice:
         if user_model not in available_models['tti']:
             voice_message = await bot_send_message(
@@ -221,6 +229,49 @@ async def process_voice(message: Message):
     else:
         await message.answer('An error occurred while extracting the text.')
 
+async def process_images(message: Message):
+    from pprint import pprint
+    # message.model_dump и следующий принт выводит с
+    # самого начала, а потом только выводит апдейты
+    # видимо это связано с асинхронностью
+    # но нижний принт выводится рядом с апдейтами
+    pprint(message.model_dump())
+    print(f"Первое сообщение {message.message_id}\n\n")
+    user_model = users.model(message.from_user.id)
+    if user_model != await available_model(message):
+        return
+    await bot.send_chat_action(message.chat.id, "typing")
+    client = config.genai_client
+    contents = []
+    file_info = await config.bot.get_file(message.photo[-1].file_id)
+    file_url = f"https://api.telegram.org/file/bot{config.bot_token}/{file_info.file_path}"
+    result = requests.get(file_url)
+    part = types.Part.from_bytes(
+        data=result.content,
+        mime_type='image/jpeg'
+    )
+    contents.append(part)
+    await bot.send_photo(
+        chat_id=message.chat.id,
+        photo=BufferedInputFile(file=result.content,
+        filename='hello.png'),
+        caption=str(file_info)
+        )
+    contents.append(types.Part.from_text(text=message.caption))
+
+    # Create the prompt with text and multiple images
+    # response = client.models.generate_content(
+    #     model="gemini-2.5-flash",
+    #     contents=contents
+    # )
+    print(len(contents), message.caption)
+    # await message.answer(response.text)
+    # await bot_send_message(
+    #     message,
+    #     cgtm(response.text),
+    #     additional_keyboard
+    #     )
+
 async def process_sticker(message: Message):
     await bot.send_chat_action(message.chat.id, "choose_sticker")
     print(message.sticker)
@@ -228,9 +279,11 @@ async def process_sticker(message: Message):
 
 async def process_all(message: Message):
     try:
+        from pprint import pprint
+        pprint(message.model_dump())
         await message.send_copy(message.chat.id)
     except TypeError:
-        await message.reply("Извините, но сообщение не распознано.")
+        await message.reply("Сообщение не распознано.")
 
 async def process_block(event: ChatMemberUpdated):
     await update_user_data(event.from_user.id, 'block', 1, config.sqlconninfo)
@@ -241,13 +294,17 @@ async def set_main_menu(bot: Bot):
         BotCommand(command='/info',
                    description='Информация'),
         BotCommand(command='/history',
-                   description='История чата'),
-        BotCommand(command='/clear',
-                   description='Очистить историю сообщений'),
+                   description='Показать историю чата'),
         BotCommand(command='/temp',
                    description='Переключить режим временного чата'),
+        BotCommand(command='/clear',
+                   description='Очистить историю сообщений'),
         BotCommand(command='/stream',
                    description='Переключить режим стриминга ответов ИИ'),
+        BotCommand(command='/tr',
+                   description='Перевод с английского на русский'),
+        BotCommand(command='/vc',
+                   description='Озвучка текста'),
     ]
     await bot.set_my_commands(main_menu_commands)
 
@@ -258,7 +315,8 @@ dp.callback_query.register(callback_pets, F.data.in_(['fox', 'dog', 'cat']))
 dp.message.register(handle_commands, Command(*commands, re.compile(r"del_(\d+)"), re.compile(r"show_(\d+)")))
 dp.message.register(send_photo, F.text, lambda m: users.model(m.from_user.id) in available_models['tti'] )
 dp.message.register(send_text, F.text)
-dp.message.register(process_voice, F.voice)
+dp.message.register(process_images, lambda m: m.photo) #PDFs, images, video
+dp.message.register(process_voice)
 dp.message.register(process_sticker, lambda m: m.sticker)
 dp.message.register(process_all)
 dp.my_chat_member.register(process_block, ChatMemberUpdatedFilter(KICKED))

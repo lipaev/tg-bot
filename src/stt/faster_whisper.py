@@ -3,6 +3,7 @@ import requests
 from config import config
 from faster_whisper import WhisperModel
 
+model = WhisperModel(model_size_or_path="large-v3", device="cuda", compute_type="int8_float32")
 
 async def speach_to_text(voice_file_id: str) -> str | None:
 
@@ -11,14 +12,11 @@ async def speach_to_text(voice_file_id: str) -> str | None:
         f"https://api.telegram.org/file/bot{config.bot_token}/{file_info.file_path}"
     )
 
-    model_size = "large-v3"
-    model = WhisperModel(model_size, device="cuda", compute_type="float16")
-
     segments, info = model.transcribe(
         io.BytesIO(requests.get(file_url).content),
-        beam_size=6,
+        beam_size=5,
         # multilingual=False,
-        # language="en",
+        language="en",
         without_timestamps=True,
     )
 

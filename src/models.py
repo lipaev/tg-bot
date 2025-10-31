@@ -1,14 +1,15 @@
 from langchain_core.messages import BaseMessage, BaseMessageChunk
+from langchain_core.runnables.history import RunnableWithMessageHistory
 from typing import Iterator
 from aiogram.types import Message
 from config import config
 
+from src.ttt.utils import google_chain, prompt_english
+# from src.ttt.faiss_rag import chain_rag
 # from src.tti.flux import generate_flux_photo
 from src.tti.gemini import send_tti_message
 from src.tts import bing, gemini
 from src.stt import faster_whisper # whisper
-from src.ttt.utils import google_chain, prompt_english
-# from src.ttt.faiss_rag import chain_rag
 
 from .tools import decode_language_code
 
@@ -16,9 +17,8 @@ from .tools import decode_language_code
 available_models = {
     "ttt": {
         "flash": google_chain(),
-        "flash_2.0": google_chain("models/gemini-2.0-flash"),
-        "flash_2.5_lite": google_chain("models/gemini-2.5-flash-lite"),
-        "english": google_chain(model="models/gemini-2.5-flash", prompt=prompt_english, temperature=0.6),
+        "flash_2.5_lite": google_chain("models/gemini-flash-lite-latest"),
+        "english": google_chain(prompt=prompt_english, temperature=0.8),
         # "rag": chain_rag,
         'pro': google_chain("models/gemini-2.5-pro", temperature=0.7),
     },
@@ -62,27 +62,26 @@ async def history_chat(
     elif message.reply_to_message:
         message_text = f"«{message.reply_to_message.text}»\n{message_text}"
 
+    settings = {
+            "configurable": {
+                "session_id": {"user_id": user_id}
+            }
+        }
+
+    chain: RunnableWithMessageHistory = available_models["ttt"][chain]
     if stream:
-        return available_models["ttt"][chain].stream(
+        return chain.stream(
             {
                 "lang": decode_language_code(message.from_user.language_code),
                 "question": message_text,
             },
-            config={
-                "configurable": {
-                    "session_id": {"user_id": user_id}
-                }
-            },
+            config=settings,
         )
     else:
-        return available_models["ttt"][chain].invoke(
+        return chain.invoke(
             {
                 "lang": decode_language_code(message.from_user.language_code),
                 "question": message_text,
             },
-            config={
-                "configurable": {
-                    "session_id": {"user_id": user_id}
-                }
-            },
+            config=settings,
         )

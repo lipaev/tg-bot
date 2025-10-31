@@ -9,7 +9,7 @@ A feature-rich Telegram bot powered by AI.
 - **Text-to-Voice**: Generate speech from text using [Gemini](https://ai.google.dev/gemini-api/docs/speech-generation) and [Bing](https://github.com/rany2/edge-tts) TTS models.
 - **Text-to-Image**: Create images from text prompts.
 - **RAG (Retrieval-Augmented Generation)**: Enhance responses with relevant information from a custom knowledge base.
-- **Stream Mode**: Toggle AI response streaming for real-time interaction.
+- **Stream Mode**: Toggle AI response streaming mode.
 - **Message History**: Maintain context with message history.
 - **Multi-User Support**: Handle multiple users simultaneously.
 

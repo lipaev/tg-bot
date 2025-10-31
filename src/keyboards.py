@@ -31,7 +31,6 @@ def generate_inline_keyboard(user_id: int, stream: bool, model: str) -> InlineKe
         InlineKeyboardButton(text='🐶', callback_data='dog'))
 
     buttons_for_anyone = [
-        model_button('flash_2.0', user_id),
         model_button('flash_2.5_lite', user_id),
         model_button('english', user_id),
         model_button("gemini-flash-image", user_id)

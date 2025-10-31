@@ -1,15 +1,17 @@
-from dataclasses import dataclass
-from aiogram import Bot
-from os import getenv
-from dotenv import load_dotenv
-from src.users import Users
 import logging
+from os import getenv
+from aiogram import Bot
+from google import genai
+from src.users import Users
+from dotenv import load_dotenv
+from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 #from random import shuffle
 
 load_dotenv('.env')
 
 bot = Bot(token=getenv('VEAPIL_BOT'))
+genai_client = genai.Client()
 
 
 model_names = {
@@ -43,7 +45,7 @@ stream_handler.setLevel(logging.INFO)
 
 # Common formatter
 formatter = logging.Formatter(
-    '{asctime}|{levelname:6}|{filename:7}:{lineno:3}|{name:19}|{message}',
+    '({asctime}) [{levelname}] [{filename}:{lineno}] [{name}] --> {message}',
     style='{'
 )
 file_handler.setFormatter(formatter)
@@ -65,6 +67,7 @@ class Config:
     cipher: str
     logging: logging
     sqlconninfo: str
+    genai_client: genai.Client
 
 config = Config(
     bot=bot,
@@ -77,5 +80,6 @@ config = Config(
     users=Users(),
     cipher=''.join(cipher),
     logging=logging,
-    sqlconninfo=getenv("SQLCONNINFO")
+    sqlconninfo=getenv("SQLCONNINFO"),
+    genai_client=genai_client
     )

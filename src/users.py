@@ -103,7 +103,7 @@ class Users():
                         other=other_history
                     )
 
-async def update_user_data(id: int, parameter: str, value, sqlconninfo: str) -> None:
+async def update_user_data(user_id: int, parameter: str, value, sqlconninfo: str) -> None:
     """
     Updates a specific parameter for a user in the database.
     Args:
@@ -112,8 +112,6 @@ async def update_user_data(id: int, parameter: str, value, sqlconninfo: str) -> 
         value: The new value to set for the specified parameter.
     Returns:
         None
-    Raises:
-        sqlite3.Error: If a database error occurs during the operation.
     """
 
     allowed_columns = {"stream", "temp", "model", "block", "eng_his", "oth_his"}
@@ -122,7 +120,7 @@ async def update_user_data(id: int, parameter: str, value, sqlconninfo: str) -> 
 
     with psycopg.connect(sqlconninfo, autocommit=True) as conn:
         with conn.cursor() as cur:
-            cur.execute(SQL('UPDATE users SET {} = %s WHERE id = %s').format(Identifier(parameter)), (value, id))
+            cur.execute(SQL('UPDATE users SET {} = %s WHERE id = %s').format(Identifier(parameter)), (value, user_id))
 
 async def get_user_data(user_id: int, columns: list[str] | str, sqlconninfo: str) -> tuple | Any | None:
     if isinstance(columns, str):
