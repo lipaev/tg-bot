@@ -47,6 +47,8 @@ A feature-rich Telegram bot powered by AI.
     * `/clear` — Clear message history.
     * `/temp` — Change temporary chat mode.
     * `/stream` — Toggle AI response streaming mode.
+    * `/tr` — Translate English text to Russian.
+    * `/vc` — Convert text message to voice.
 
 ## License
 This project is licensed under the MIT License. See the LICENSE file for details.
