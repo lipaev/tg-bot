@@ -83,12 +83,12 @@ async def callback_tts(query: CallbackQuery, callback_data: TTSCallback):
     text = query.message.text
 
     if callback_data.user_id == user_id:
-        tts_model = available_models['tts'].get(tts_model, None)
+        tts_model = available_models['tts'].get(tts_model, None).get('model', None)
         if tts_model:
             await tts_model(query.message, text)
             await query.answer()
         else:
-            await query.answer("Error. Model is not available.")
+            await query.answer("Model is not available.")
     else:
         await query.answer("Error.")
 

@@ -1,6 +1,7 @@
 import re
 import io
 import asyncio
+from pprint import pprint
 
 from google.genai import types
 
@@ -23,6 +24,10 @@ from src.keyboards import additional_keyboard
 from config import config
 from src.users import update_user_data
 
+client = config.genai_client
+chat = client.chats.create(
+    model="gemini-pro-latest", history=[]
+)
 dp = Dispatcher()
 model_names = config.model_names
 users.load_from_db()
@@ -39,7 +44,7 @@ async def send_text(message: Message, voice_message: Message | None = None):
     #quote = f">{voice_message}\n" if voice_message else ''
     user_model = await available_model(message)
     user_id = message.from_user.id
-    disable_notification = False  # For reducing unnecesary notifications
+    disable_notification = False  # For reducing unnecessary notifications
 
     if not users.stream(message.from_user.id):
         basemessage = await hc(message, user_model, message_text, stream=False)
@@ -186,7 +191,7 @@ async def send_photo(message: Message, voice_text: str | None = None):
     task = asyncio.create_task(lp(message.chat.id, cycles=26, action='upload_photo'))
 
     try:
-        await available_models['tti'][user_model](message=message, voice_text=voice_text)
+        await available_models['tti'][user_model]["model"](message=message, voice_text=voice_text)
     except Exception as e:
         logging.error(e)
         await bot.send_message(chat_id=message.chat.id, text=f"An error occured: {e}")
@@ -202,10 +207,10 @@ async def process_voice(message: Message):
 
     if message.voice:
         file_id = message.voice.file_id
-        text_from_voice = await available_models['stt']['faster-whisper'](file_id)
+        text_from_voice = await available_models['stt']['faster-whisper']["model"](file_id)
     elif message.audio:
         file_id = message.audio.file_id
-        text_from_voice = await available_models['stt']['faster-whisper'](file_id)
+        text_from_voice = await available_models['stt']['faster-whisper']["model"](file_id)
         await send_any_text(
             message=message,
             text=text_from_voice,
@@ -230,19 +235,21 @@ async def process_voice(message: Message):
         await message.answer('An error occurred while extracting the text.')
 
 async def process_images(message: Message):
-    from pprint import pprint
+    """
+    Processes an image and caption (if it exists) then returns a model answer. Badly works with a bundle of images.
+    """
     # message.model_dump и следующий принт выводит с
     # самого начала, а потом только выводит апдейты
     # видимо это связано с асинхронностью
     # но нижний принт выводится рядом с апдейтами
-    pprint(message.model_dump())
-    print(f"Первое сообщение {message.message_id}\n\n")
+    #pprint(message.model_dump())
+    #print(f"Первое сообщение {message.message_id}\n\n")
     user_model = users.model(message.from_user.id)
     if user_model != await available_model(message):
         return
     await bot.send_chat_action(message.chat.id, "typing")
-    client = config.genai_client
-    contents = []
+
+    content = []
     file_info = await config.bot.get_file(message.photo[-1].file_id)
     file_url = f"https://api.telegram.org/file/bot{config.bot_token}/{file_info.file_path}"
     result = requests.get(file_url)
@@ -250,22 +257,30 @@ async def process_images(message: Message):
         data=result.content,
         mime_type='image/jpeg'
     )
-    contents.append(part)
-    await bot.send_photo(
-        chat_id=message.chat.id,
-        photo=BufferedInputFile(file=result.content,
-        filename='hello.png'),
-        caption=str(file_info)
-        )
-    contents.append(types.Part.from_text(text=message.caption))
+    content.append(part)
+    # await bot.send_photo(
+    #     chat_id=message.chat.id,
+    #     photo=BufferedInputFile(file=result.content,
+    #     filename='hello.png'),
+    #     caption=str(file_info)
+    #     )
+    content.append(types.Part.from_text(text=message.caption))
+    response = chat.send_message(content)
+    # for chunk in stream:
+    #     print(chunk.text, end="")
+
 
     # Create the prompt with text and multiple images
     # response = client.models.generate_content(
-    #     model="gemini-2.5-flash",
+    #     model="gemini-pro-latest",
     #     contents=contents
     # )
-    print(len(contents), message.caption)
-    # await message.answer(response.text)
+    #print(len(contents), message.caption)
+    await message.answer(
+        cgtm(response.text),
+        parse_mode="MarkdownV2",
+        reply_markup=additional_keyboard(message.from_user.id)
+        )
     # await bot_send_message(
     #     message,
     #     cgtm(response.text),

@@ -236,6 +236,7 @@ async def show_message_pair(message: Message):
         await message.answer(f"Message pair №{pair_number//2} are not exist.")
 
 async def translate(message: Message):
+    await bot.send_chat_action(message.chat.id, "typing")
     textToTranslate = message.text[4:]
     if textToTranslate:
         response = await genai_model.ainvoke(
@@ -258,9 +259,10 @@ async def translate(message: Message):
     await message.delete()
 
 async def to_voice(message: Message):
+    await bot.send_chat_action(message.chat.id, "record_voice")
     textToVoice = message.text[4:]
     if textToVoice:
-        await available_models["tts"]["ava_bing"](message, textToVoice)
+        await available_models["tts"]["ava_bing"]["model"](message, textToVoice)
     else:
         response = "Напишите текст для озвучивания после `/vc`\. Например: `/vc your text`\."
         await message.answer(

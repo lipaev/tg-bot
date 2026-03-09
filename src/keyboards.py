@@ -102,7 +102,7 @@ def additional_keyboard(user_id: int) -> InlineKeyboardMarkup:
     builder.row(
         *[tts_button(alias, user_id) for alias in available_models['tts']],
         InlineKeyboardButton(text="Убрать сообщение", callback_data="delete"),
-        width=4
+        width=5
         )
 
     return builder.as_markup()

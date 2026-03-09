@@ -25,6 +25,7 @@ model_names = {
     'rag': 'Закон РБ',
     'umbriel_gemini': 'Umbriel Gemini',
     'andrew_bing': 'Andrew Bing',
+    'brian_bing': 'Brian Bing',
     'ava_bing': 'Ava Bing',
     "algenib": "Algenib Gemini",
     "charon": "Charon Gemini",

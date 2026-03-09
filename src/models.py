@@ -1,8 +1,9 @@
 from langchain_core.messages import BaseMessage, BaseMessageChunk
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from typing import Iterator
+from typing import Iterator, Any
 from aiogram.types import Message
 from config import config
+from dataclasses import dataclass, field
 
 from src.ttt.utils import google_chain, prompt_english
 # from src.ttt.faiss_rag import chain_rag
@@ -16,28 +17,37 @@ from .tools import decode_language_code
 
 available_models = {
     "ttt": {
-        "flash": google_chain(),
-        "flash_2.5_lite": google_chain("models/gemini-flash-lite-latest"),
-        "english": google_chain(prompt=prompt_english, temperature=0.8),
+        "flash": {"model": google_chain(), "description": "Gemini 2.5 Flash"},
+        "flash_2.5_lite": {"model": google_chain("models/gemini-flash-lite-latest"), "description": "Gemini 2.5 Flash Lite"},
+        "english": {"model": google_chain(prompt=prompt_english, temperature=0.8), "description": "Учитель английского"},
         # "rag": chain_rag,
-        'pro': google_chain("models/gemini-2.5-pro", temperature=0.7),
+        'pro': {"model": google_chain("models/gemini-2.5-pro", temperature=0.7), "description": "Gemini 2.5 Pro"},
     },
     "tti": {
         #'flux': generate_flux_photo,
-        "gemini-flash-image": send_tti_message
+        "gemini-flash-image": {"model": send_tti_message, "description": "Gemini 2.0 Flash Image📸"}
     },
     "tts": {
-        "algenib": gemini.send_tts_message("Algenib"),
-        "charon": gemini.send_tts_message("Charon"),
-        "andrew_bing": bing.send_tts_message("en-US-AndrewMultilingualNeural"),
-        "ava_bing": bing.send_tts_message("en-US-AvaMultilingualNeural"),
+        "algenib": {"model": gemini.send_tts_message("Algenib"), "description": "Algenib"},
+        "charon": {"model": gemini.send_tts_message("Charon"), "description": "Charon"},
+        "andrew_bing": {"model": bing.send_tts_message("en-US-AndrewMultilingualNeural"), "description": "Andrew Bing"},
+        "brian_bing": {"model": bing.send_tts_message("en-US-BrianMultilingualNeural"), "description": "Brian Bing"},
+        "ava_bing": {"model": bing.send_tts_message("en-US-AvaMultilingualNeural"), "description": "Ava Bing"},
     },
     "stt": {
-        #"whisper": whisper.speach_to_text,
-        "faster-whisper": faster_whisper.speach_to_text,
+        #"whisper": whisper.speech_to_text,
+        "faster-whisper": {"model": faster_whisper.speech_to_text, "description": "Faster Whisper"},
     },
 }
 
+
+# @dataclass
+# class BotModels():
+#     models: dict[str, dict[str, Any]] = field(default_factory=(available_models["stt"] | available_models["tti"] | available_models["tts"] | available_models["ttt"]))
+#     stt: dict[str, Any] = available_models["stt"]
+#     tti: dict[str, Any] = available_models["tti"]
+#     tts: dict[str, Any] = available_models["tts"]
+#     ttt: dict[str, Any] = available_models["ttt"]
 
 async def history_chat(
     message: Message,
@@ -68,7 +78,7 @@ async def history_chat(
             }
         }
 
-    chain: RunnableWithMessageHistory = available_models["ttt"][chain]
+    chain: RunnableWithMessageHistory = available_models["ttt"][chain]['model']
     if stream:
         return chain.stream(
             {
