@@ -4,8 +4,7 @@ from config import config
 from faster_whisper import WhisperModel
 
 
-def _speech_to_text():
-    model = ""
+def _speech_to_text(model = ""):
 
     async def closure(voice_file_id: str) -> str | None:
         nonlocal model
